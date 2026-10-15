@@ -1,54 +1,46 @@
-# Cuestionario de entrevistas y guia de codificacion
+# Cuestionario de entrevistas (proyecto inmobiliario)
 
-Marco de investigacion: opcion A (historico-documental + urbano/migratorio), con triangulacion de anuncios, tasas, entrevistas y fuentes documentales.
+Escala sugerida: 10 a 15 personas, organizadas por perfil:
+- propietario que ha intentado vender,
+- comprador potencial o familiar vinculado a una venta,
+- agente o intermediario,
+- observador que siguió el proceso (familiar o abogado).
 
-## Muestra sugerida
-- 10 a 15 entrevistas semiestructuradas.
-- Perfiles: propietarios que vendieron, propietarios que no vendieron, buscadores/compradores, agentes/inmobiliarias, observadores (familiares o abogados), en La Habana.
-- Grabar con consentimiento; anonimizar como E1, E2, ...
-- Registrar municipio, edad, ocupacion, fuente de ingresos, ano de la decision.
+Registrar por entrevista: municipio, año de la decisión, tipo de vivienda, moneda usada, y cualquier dato demográfico útil.
 
-## Guion de entrevista
+## Preguntas
 
-### Bloque 1. Contexto y uso de la vivienda
-1. ¿Cual es su relacion con la vivienda: propietario, inquilino, comprador potencial o agente?
-2. ¿En que municipio se ubica y que tipo de vivienda es?
-3. ¿Hace cuantos anos se uso la vivienda para residencia habitual?
+1. ¿Cuál es su relación con la vivienda (propietario, heredero, inquilino, comprador potencial u otra) y en qué municipio se encuentra la vivienda con la que tiene mayor conocimiento?
 
-### Bloque 2. Venta y precio
-4. ¿Ha vendido o intentado vender una vivienda desde 2020? ¿En que moneda se publico el precio?
-5. ¿El precio inicial fue mayor o menor al que se esperaba? ¿Por que?
-6. ¿Cuales factores cree que mas influyeron en el precio: municipio, tamaño, estado, moneda, canal de venta?
-7. ¿Tuvo que bajar el precio para vender mas rapido? ¿Por que?
+2. En su opinión, ¿cómo han evolucionado los precios de las viviendas en Cuba desde 2020 hasta la actualidad? ¿A qué atribuye esos cambios?
 
-### Bloque 3. Tasas de cambio y moneda
-8. ¿En que moneda preferio cobrar y por que?
-9. ¿Considera que convertir de CUP a USD/EUR complica el valor percibido de la vivienda?
-10. ¿Ha notado que los compradores usan la tase informal o formal como referencia?
+3. ¿Cuáles considera que son los principales factores que determinan el precio de una vivienda en Cuba (ubicación, tamaño, estado constructivo, moneda u otros)?
 
-### Bloque 4. Migracion y mercado
-11. ¿Conoce casos de personas que vendieron viviendas para financiar emigracion entre 2020 y 2026?
-12. ¿Cree que la migracion presiona a la baja los precios o que concentra la compra en zonas específicas?
-13. ¿La percepcion de cambio de moneda o crisis economica afecta mas que la migracion?
+4. ¿Qué influencia cree que tienen el USD, el EUR y las tasas de cambio oficiales e informales en la fijación de los precios de las viviendas?
 
-### Bloque 5. Canal de venta
-14. ¿Prefiere vender por anuncio individual, por inmobiliaria formal o por redes informales? ¿Por que?
-15. ¿Que variables deberia tener un anuncio ideal para generar confianza?
+5. ¿Considera que los precios publicados en los anuncios inmobiliarios reflejan el valor real de las viviendas? ¿Por qué?
 
-## Escala de codificacion
-- C1: mencion de necesidad economica directa
-- C2: mencion de emigracion
-- C3: mencion de moneda/tasa
-- C4: mencion de canal de venta
-- C5: tension entre precio alto/bajo
-- C6: ausencia o presencia de m2/banos en la decision
-- C7: percepcion de municipio
-- A1: cita ilustrativa (texto breve)
-- A2: nivel de confianza (bajo/media/alto)
+6. ¿Qué influencia considera que ha tenido la migración en la oferta, la demanda y los precios de las viviendas en Cuba durante el período estudiado?
 
-## Plan de analisis
-- Cruce de citas por tema.
-- Tablas de frecuencia de menciones.
-- Mapa de municipios mencionados.
-- Comparacion con mediana de precios por fuente.
-- Diferencia entre formal e informal si hay suficientes testimonios.
+7. Entre la crisis económica, las variaciones de las tasas de cambio y la migración, ¿cuál considera que ha influido más en el mercado inmobiliario cubano? ¿Por qué?
+
+8. ¿Qué factores podrían llevar a una persona a reducir el precio solicitado por su vivienda o dificultar su venta?
+
+9. ¿Qué canales considera más efectivos para ofertar viviendas en Cuba y qué información debería incluir un anuncio para generar confianza?
+
+## Codificación útil
+- relación con la vivienda
+- causa de cambio de precio
+- moneda usada
+- tasa mencionada
+- impacto de la migración
+- canal de venta
+- confianza en el anuncio
+
+## Uso posterior
+Comparar las respuestas con:
+- mediana por fuente y moneda,
+- diferencia entre precio informal y formal,
+- cobertura de m2 o baños,
+- presencia de características en viviendas de precio alto.
+PY

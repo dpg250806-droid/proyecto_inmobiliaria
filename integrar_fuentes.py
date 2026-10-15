@@ -100,6 +100,8 @@ def dataframe_revolico(path: Path) -> pd.DataFrame:
     required = ["tipo_vivienda", "ubicacion_raw", "habitaciones", "precio_original", "moneda"]
     for idx, item in source.iterrows():
         price, suspicious = normalizar_precio(item.get("precio", ""), item.get("moneda", ""))
+        if (not suspicious) and str(item.get("moneda", "")).strip().upper() == "CUP":
+            suspicious = True
         rows.append(
             {
                 "fuente": "Revolico",
@@ -242,8 +244,22 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
     revolico_path = root / "anuncios_revolico_procesados.csv"
     cubisima_path = root / "viviendas_cubisima.csv"
     hogar_dir = root / "outputs" / "hogarencuba"
-    hogar_candidates = sorted(hogar_dir.glob("viviendas_hogarencuba_*.csv")) if hogar_dir.exists() else []
-    hogar_path = hogar_candidates[-1] if hogar_candidates else None
+    if hogar_dir.exists():
+        hogar_candidates = []
+        for candidate in hogar_dir.glob("viviendas_hogarencuba_*.csv"):
+            try:
+                if candidate.stat().st_size > 0 and len(pd.read_csv(candidate, dtype=str)) > 0:
+                    hogar_candidates.append(candidate)
+            except Exception:
+                continue
+        if hogar_candidates:
+            hogar_scores = [(p, len(pd.read_csv(p, dtype=str))) for p in hogar_candidates]
+            hogar_path = max(hogar_scores, key=lambda x: x[1])[0]
+        else:
+            hogar_path = None
+    else:
+        hogar_path = None
+        hogar_path = None
 
     if not revolico_path.exists():
         raise FileNotFoundError(revolico_path)

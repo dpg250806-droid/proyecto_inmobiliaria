@@ -59,8 +59,15 @@ def convertir(frame: pd.DataFrame, rates: pd.DataFrame) -> pd.DataFrame:
         return None
 
     frame = frame.copy()
-    frame["precio_usd_informal"] = frame.apply(lambda row: usd_price(row, fx_usd_inf, fx_eur_inf), axis=1)
-    frame["precio_usd_formal"] = frame.apply(lambda row: usd_price(row, fx_usd_for, fx_eur_for), axis=1)
+    frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.lower().isin(["true","1"])
+    frame["precio_usd_informal"] = frame.apply(
+        lambda row: usd_price(row, fx_usd_inf, fx_eur_inf) if not bool(row.get("precio_sospechoso", False)) else None,
+        axis=1
+    )
+    frame["precio_usd_formal"] = frame.apply(
+        lambda row: usd_price(row, fx_usd_for, fx_eur_for) if not bool(row.get("precio_sospechoso", False)) else None,
+        axis=1
+    )
     frame["fx_usd_informal_cup"] = fx_usd_inf
     frame["fx_eur_informal_cup"] = fx_eur_inf
     frame["fx_usd_formal_cup"] = fx_usd_for
