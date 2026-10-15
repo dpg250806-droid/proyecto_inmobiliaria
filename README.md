@@ -67,7 +67,7 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `municipio` y `habitaciones` tienen ausencia alta porque solo se extraen del titulo.
 - `texto_tarjeta` no es un texto individual confiable para analisis.
 - `datos_revolico_json.csv` no es una fuente de viviendas exclusiva; contiene anuncios de productos diversos.
-- No se han verificado las paginas individuales de anuncios para confirmar baños, metros cuadrados, planta, garaje o fechas.
+- No se han verificado las paginas individuales de anuncios para confirmar ba├▒os, metros cuadrados, planta, garaje o fechas.
 - No se ha integrado la fuente Cubisima ni se ha modificado `analisis_inmobiliario.py`.
 - No se han hecho commits ni cambios remotos en esta etapa.
 
@@ -76,7 +76,31 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - Correspondencia exacta entre cada anuncio y su pagina individual.
 - Validez real de precios atipicos (1 USD, 52.849.429, etc.) contra el texto original.
 - Cobertura completa y representatividad del muestreo de 8 paginas.
-- Disponibilidad y calidad de variables adicionales (baños, m2, planta, fecha, garaje, balcon, terraza).
+- Disponibilidad y calidad de variables adicionales (ba├▒os, m2, planta, fecha, garaje, balcon, terraza).
 - Analisis estadistico, visualizaciones, modelos predictivos o conclusiones sustantivas del mercado.
 
 No se han modificado scripts existentes ni archivos CSV originales durante esta etapa de auditoria.
+
+## Fuentes integradas
+
+- Revolico: anuncios base, mas volumen y precios en USD/CUP; municipio y habitaciones con baja cobertura.
+- Cubisima: mas variables estructuradas, especialmente banos y zona.
+- HogarEnCuba: prueba formal con fichas que incluyen superficie y banos en algunos casos.
+
+## Bloques disponibles
+
+- uditoria_revolico.py: diagnostico de calidad.
+- limpiar_revolico.py: base analitica derivada.
+- integrar_fuentes.py: dataset maestro.
+- 	asas_cambio.py: registro auditable de tasas.
+- convertir_precios_tasas.py: conversion a USD.
+- comparativo_fuentes.py: cobertura y mediana por fuente/canal.
+- isualizaciones_fuentes.py: graficos y esquema.
+- eda_revolico.py: EDA tabular.
+
+## Limitaciones actuales
+
+- Revolico bloqueado por anti-bot.
+- Superficie disponible solo en parte de HogarEnCuba.
+- Moneda CUP requiere depuracion manual.
+- Los anuncios no equivalen a transacciones cerradas.
