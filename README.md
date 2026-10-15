@@ -55,6 +55,9 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-15` - Instalacion de Playwright autorizada y prueba con Chrome del sistema. El desafio anti-bot persiste, por lo que el scraper cae automaticamente a paginas locales sin error fatal.
 - `2026-10-15` - Pruebas adicionales contra Cloudflare: `curl_cffi` con suplantacion TLS, Playwright y Selenium standard tambien recibieron pagina "Un momento...". `undetected-chromedriver` no funciono por incompatibilidad de version (Chrome 154 vs ChromeDriver 155).
 - `2026-10-15` - Conclusion operativa: la descarga online automatica de Revolico no es fiable hoy; se mantiene el flujo de paginas HTML guardadas + procesamiento reproducible.
+- `2026-10-15` - Scraper online de Cubisima verificado y ejecutado: 25 paginas y 598 anuncios unicos guardados en `outputs/cubisima/`.
+- `2026-10-15` - EDA reproducible para Revolico implementado en `eda_revolico.py`; reporte tabular guardado en `outputs/eda/`.
+- `2026-10-15` - Verificadas fuentes cubanas adicionales (Casas Oasis, HogarEnCuba, Busca Tu Choza) y documentadas en `fuentes_datos.md`.
 - `2026-10-15` - Subida a GitHub del commit `f5100ad` con el scraper hibrido, auditoria, limpieza no destructiva y documentacion. Los archivos derivados pesados (`data/`, `outputs/`, CSV reparado) se mantienen solo localmente.
 
 ## Limitaciones conocidas
