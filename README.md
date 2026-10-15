@@ -52,6 +52,7 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-15 13:08` - Correccion del patron de banos en el script de limpieza y segunda ejecucion. Se genero `outputs/limpieza/viviendas_revolico_variables_20261015_130807.csv`.
 - `2026-10-15` - Integracion documental de `README.md`, `data_dictionary.md` y nuevos scripts de auditoria/limpieza.
 - `2026-10-15` - Pruebas del scraper online: Revolico devuelve HTTP 403 (proteccion anti-bot/Cloudflare). Se implemento un scraper hibrido con diagnostico y respaldo local.
+- `2026-10-15` - Subida a GitHub del commit `f5100ad` con el scraper hibrido, auditoria, limpieza no destructiva y documentacion. Los archivos derivados pesados (`data/`, `outputs/`, CSV reparado) se mantienen solo localmente.
 
 ## Limitaciones conocidas
 
