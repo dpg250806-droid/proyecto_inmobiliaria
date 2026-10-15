@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Scraper hibrido de Revolico para el proyecto inmobiliario.
+"""Scraper hibrido y automatizado de Revolico.
 
-Intenta descargar directamente las paginas online de Revolico. Si el sitio bloquea
-la peticion con HTTP 403/401 (Cloudflare u otra proteccion), puede usar como
-respaldo las paginas HTML guardadas manualmente en paginas_revolico/.
+Motores disponibles:
+- playwright: navegador Chromium automatizado (mejor opcion para evitar 403).
+- requests: HTTP directo (sujeto a bloqueo anti-bot).
+- local: procesa las paginas HTML guardadas manualmente.
 
 El archivo de salida por defecto no sobrescribe enlaces_anuncios_revolico.csv.
 """
@@ -15,18 +16,22 @@ import argparse
 import time
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urljoin
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-
 
 RAIZ = Path(__file__).resolve().parent
 PAGINAS_LOCALES = RAIZ / "paginas_revolico"
+CACHE_ONLINE = RAIZ / "paginas_revolico_online"
 SALIDA_POR_DEFECTO = RAIZ / "enlaces_anuncios_revolico_reparado.csv"
 
 URL_BASE = "https://www.revolico.com/search?category=inmobiliaria&subcategory=inmobiliaria-casas&province=la-habana"
+
+
+class SitioBloqueadoError(RuntimeError):
+    pass
 
 
 def encabezados_navegador() -> dict[str, str]:
@@ -49,27 +54,27 @@ def encabezados_navegador() -> dict[str, str]:
     }
 
 
-class SitioBloqueadoError(RuntimeError):
-    """Se lanza cuando Revolico responde con una pagina de bloqueo o challenge."""
+def url_pagina(numero: int) -> str:
+    if numero <= 1:
+        return URL_BASE
+    return f"{URL_BASE}&page={numero}"
 
 
-def descargar_online(url: str, intentos: int = 3, espera: float = 2.0) -> str:
+def descargar_requests(url: str, intentos: int = 3, espera: float = 2.0) -> str:
     session = requests.Session()
-    ultimo_error: Exception | None = None
+    ultimo_error = None
 
     for intento in range(1, intentos + 1):
         try:
             respuesta = session.get(url, headers=encabezados_navegador(), timeout=30)
+            cuerpo = respuesta.text[:800].lower()
             if respuesta.status_code in (401, 403):
-                cuerpo = respuesta.text[:500].lower()
                 if "just a moment" in cuerpo or "cloudflare" in cuerpo or "challenge" in cuerpo:
                     raise SitioBloqueadoError(
                         "Revolico bloqueo la peticion automatica (HTTP "
                         f"{respuesta.status_code}, proteccion anti-bot/Cloudflare)."
                     )
-                raise SitioBloqueadoError(
-                    f"Revolico respondio HTTP {respuesta.status_code} para {url}."
-                )
+                raise SitioBloqueadoError(f"Revolico respondio HTTP {respuesta.status_code} para {url}.")
             if respuesta.status_code != 200:
                 raise RuntimeError(f"HTTP {respuesta.status_code} al solicitar {url}.")
             return respuesta.text
@@ -85,15 +90,53 @@ def descargar_online(url: str, intentos: int = 3, espera: float = 2.0) -> str:
     raise RuntimeError(f"Error inesperado al descargar {url}: {ultimo_error}")
 
 
+def descargar_playwright(url: str, timeout_ms: int = 60000) -> str:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright no esta instalado. Ejecute: python -m pip install playwright && python -m playwright install chromium"
+        ) from exc
+
+    with sync_playwright() as playwright:
+        # Si el binario de Playwright no esta instalado, se usa Chrome del sistema.
+        try:
+            navegador = playwright.chromium.launch(headless=True)
+        except Exception:
+            navegador = playwright.chromium.launch(channel="chrome", headless=True)
+
+        contexto = navegador.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1366, "height": 768},
+            locale="es-ES",
+        )
+        pagina = contexto.new_page()
+        pagina.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+        )
+        try:
+            pagina.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            pagina.wait_for_selector('a[href*="/item/"]', timeout=timeout_ms)
+            # Pequeña espera adicional para que termine la hidratacion de Next.js.
+            pagina.wait_for_timeout(3000)
+            html = pagina.content()
+        finally:
+            contexto.close()
+            navegador.close()
+
+    cuerpo = html[:1000].lower()
+    if "just a moment" in cuerpo or "cloudflare" in cuerpo or "verify you are human" in cuerpo:
+        raise SitioBloqueadoError("Playwright recibio una pagina de bloqueo de Cloudflare o challenge.")
+    return html
+
+
 def encontrar_contenedor_individual(enlace):
-    """Devuelve el ancestro mas cercano que contiene solo este anuncio.
-
-    La extraccion anterior tomaba un ancestro compartido, lo que mezclaba
-    varios anuncios en texto_tarjeta. Esta version evita esa contaminacion.
-    """
-
     elemento = enlace
-    for _ in range(8):
+    for _ in range(10):
         elemento = elemento.parent
         if elemento is None:
             break
@@ -132,7 +175,6 @@ def extraer_anuncios(html: str, origen: str) -> list[dict]:
                 "texto_tarjeta": contenedor.get_text(" ", strip=True),
                 "url": url,
                 "pagina_origen": origen,
-                "nivel_contenedor": None,
             }
         )
 
@@ -143,56 +185,83 @@ def leer_pagina_local(ruta: Path) -> str:
     return ruta.read_text(encoding="utf-8", errors="ignore")
 
 
+def guardar_cache(origen: str, html: str, guardar: bool) -> None:
+    if not guardar:
+        return
+    CACHE_ONLINE.mkdir(parents=True, exist_ok=True)
+    (CACHE_ONLINE / origen).write_text(html, encoding="utf-8")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Scraper hibrido de Revolico para inmobiliaria en La Habana.")
-    parser.add_argument("--fuente", choices=["auto", "online", "local"], default="auto")
+    parser = argparse.ArgumentParser(description="Scraper de Revolico para inmobiliaria en La Habana.")
+    parser.add_argument("--motor", choices=["auto", "playwright", "requests", "local"], default="auto")
     parser.add_argument("--max-paginas", type=int, default=8)
     parser.add_argument("--salida", type=Path, default=SALIDA_POR_DEFECTO)
     parser.add_argument("--espera", type=float, default=2.0)
+    parser.add_argument("--no-guardar-html", action="store_true")
     args = parser.parse_args()
 
     todos: list[dict] = []
     estado_online = "no intentado"
 
-    if args.fuente in ("auto", "online"):
+    paginas_solicitadas = max(1, args.max_paginas)
+
+    if args.motor in ("auto", "playwright"):
         try:
-            # En esta version solo se prueba la primera URL. El resto de paginas
-            # puede añadirse cuando la API o la paginacion estable esten disponibles.
-            html = descargar_online(URL_BASE)
-            estado_online = "OK"
-            anuncios = extraer_anuncios(html, "revolico_online_pagina_1.html")
-            todos.extend(anuncios)
-            print("Descarga online: OK")
-            print(f"Anuncios encontrados online: {len(anuncios)}")
-        except SitioBloqueadoError as exc:
-            estado_online = f"bloqueado: {exc}"
-            print(f"Descarga online bloqueada: {exc}")
-            if args.fuente == "online":
-                raise
+            for numero in range(1, paginas_solicitadas + 1):
+                url = url_pagina(numero)
+                print(f"Descargando online con Playwright: {url}")
+                html = descargar_playwright(url)
+                origen = f"revolico_online_pagina_{numero}.html"
+                guardar_cache(origen, html, not args.no_guardar_html)
+                anuncios = extraer_anuncios(html, origen)
+                todos.extend(anuncios)
+                print(f"  Anuncios encontrados: {len(anuncios)}")
+                if not anuncios:
+                    break
+                time.sleep(args.espera)
+            estado_online = "playwright OK"
         except Exception as exc:
-            estado_online = f"error: {exc}"
-            print(f"Error online: {exc}")
-            if args.fuente == "online":
+            estado_online = f"playwright fallo: {exc}"
+            print("Playwright no disponible o bloqueado:", ascii(exc))
+            if args.motor == "playwright":
                 raise
 
-    usar_local = args.fuente == "local" or (args.fuente == "auto" and not todos)
+    if args.motor in ("auto", "requests") and not todos:
+        try:
+            for numero in range(1, paginas_solicitadas + 1):
+                url = url_pagina(numero)
+                print(f"Descargando online con requests: {url}")
+                html = descargar_requests(url)
+                origen = f"revolico_requests_pagina_{numero}.html"
+                guardar_cache(origen, html, not args.no_guardar_html)
+                anuncios = extraer_anuncios(html, origen)
+                todos.extend(anuncios)
+                print(f"  Anuncios encontrados: {len(anuncios)}")
+                if not anuncios:
+                    break
+                time.sleep(args.espera)
+            estado_online = "requests OK"
+        except Exception as exc:
+            estado_online = f"requests fallo: {exc}"
+            print("Requests no pudo obtener la pagina:", ascii(exc))
+            if args.motor == "requests":
+                raise
+
+    usar_local = args.motor == "local" or not todos
     if usar_local:
         archivos = sorted(PAGINAS_LOCALES.glob("*.html")) + sorted(PAGINAS_LOCALES.glob("*.htm"))
         archivos = sorted(set(archivos))
         if not archivos:
-            raise FileNotFoundError(
-                "No hay paginas HTML locales en paginas_revolico/ y la descarga online no fue posible."
-            )
-        limite = min(args.max_paginas, len(archivos))
+            raise FileNotFoundError("No hay paginas locales y la descarga online no fue posible.")
+        limite = min(paginas_solicitadas, len(archivos))
         for ruta in archivos[:limite]:
             print(f"Leyendo localmente: {ruta.name}")
             html = leer_pagina_local(ruta)
             anuncios = extraer_anuncios(html, ruta.name)
             todos.extend(anuncios)
             print(f"  Anuncios encontrados: {len(anuncios)}")
-            time.sleep(0.2)
 
-    # Eliminamos duplicados por URL preservando la primera aparicion.
     vistos: set[str] = set()
     unicos: list[dict] = []
     for anuncio in todos:
@@ -202,12 +271,6 @@ def main() -> None:
         unicos.append(anuncio)
 
     tabla = pd.DataFrame(unicos)
-
-    # Quitamos el marcador auxiliar; el nivel real depende del ancestro, no de
-    # un numero fijo.
-    if "nivel_contenedor" in tabla.columns:
-        tabla = tabla.drop(columns=["nivel_contenedor"])
-
     if tabla.empty:
         raise RuntimeError("No se extrajeron anuncios. Revise el bloqueo online o las paginas locales.")
 
@@ -215,7 +278,7 @@ def main() -> None:
     tabla.to_csv(args.salida, index=False, encoding="utf-8-sig")
 
     print("\n--- RESULTADO ---")
-    print(f"Fuente online: {estado_online}")
+    print(f"Estado online: {estado_online}")
     print(f"Anuncios antes de quitar duplicados: {len(todos)}")
     print(f"Anuncios unicos guardados: {len(tabla)}")
     print(f"Archivo guardado: {args.salida}")
