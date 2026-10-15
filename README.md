@@ -53,6 +53,8 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-15` - Integracion documental de `README.md`, `data_dictionary.md` y nuevos scripts de auditoria/limpieza.
 - `2026-10-15` - Pruebas del scraper online: Revolico devuelve HTTP 403 (proteccion anti-bot/Cloudflare). Se implemento un scraper hibrido con diagnostico y respaldo local.
 - `2026-10-15` - Instalacion de Playwright autorizada y prueba con Chrome del sistema. El desafio anti-bot persiste, por lo que el scraper cae automaticamente a paginas locales sin error fatal.
+- `2026-10-15` - Pruebas adicionales contra Cloudflare: `curl_cffi` con suplantacion TLS, Playwright y Selenium standard tambien recibieron pagina "Un momento...". `undetected-chromedriver` no funciono por incompatibilidad de version (Chrome 154 vs ChromeDriver 155).
+- `2026-10-15` - Conclusion operativa: la descarga online automatica de Revolico no es fiable hoy; se mantiene el flujo de paginas HTML guardadas + procesamiento reproducible.
 - `2026-10-15` - Subida a GitHub del commit `f5100ad` con el scraper hibrido, auditoria, limpieza no destructiva y documentacion. Los archivos derivados pesados (`data/`, `outputs/`, CSV reparado) se mantienen solo localmente.
 
 ## Limitaciones conocidas
