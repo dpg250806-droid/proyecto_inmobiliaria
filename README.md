@@ -104,3 +104,8 @@ No se han modificado scripts existentes ni archivos CSV originales durante esta 
 - Superficie disponible solo en parte de HogarEnCuba.
 - Moneda CUP requiere depuracion manual.
 - Los anuncios no equivalen a transacciones cerradas.
+
+
+## Cuestionario anonimo
+
+Enlace: https://forms.gle/Lk3vod7cQuGHZwub9
