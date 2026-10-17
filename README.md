@@ -68,6 +68,17 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-15` - Conversiones USD y comparativos por canal (`631022e`).
 - `2026-10-16` - Limpieza integrada, informe preliminar y AGENTS.md (`83370ad`, `98ba80c`).
 
+- `2026-09-29` - Primer avance del proyecto inmobiliario (`ec45478`).
+- `2026-09-29` - Mejora de limpieza y clasificacion de anuncios de Revolico (`bb70b4d`).
+- `2026-09-29` - Extraccion de municipio y habitaciones en Revolico (`7132484`).
+- `2026-09-29` - Reforzamiento del procesamiento de Revolico (`ec64e6f`).
+- `2026-10-15` - Auditoria read-only, copia de seguridad e inventario SHA-256 (`f5100ad`).
+- `2026-10-15` - Scraper hibrido de Revolico con respaldo local (`6364f57`).
+- `2026-10-15` - Scraper online de Cubisima y EDA tabular (`c525060`).
+- `2026-10-15` - Integracion de fuentes, visualizaciones y modulo de tasas (`c7dfc58`).
+- `2026-10-15` - Conversiones USD y comparativos por canal (`631022e`).
+- `2026-10-16` - Limpieza integrada, informe preliminar y AGENTS.md (`83370ad`, `98ba80c`).
+
 - `2026-10-15 12:52` - Auditoria read-only del dataset Revolico. Se genero `outputs/auditoria/auditoria_revolico_20261015_125247.md` con ausencias, duplicados, precios sospechosos y limitaciones.
 - `2026-10-15 12:52` - Copia de seguridad de los 9 CSV existentes en `data/raw/` con inventario SHA-256 en `data/raw/hash_inventario.csv`.
 - `2026-10-15 13:05` - Primera ejecucion de limpieza no destructiva. Resultado: 672 filas en la base sugerida.

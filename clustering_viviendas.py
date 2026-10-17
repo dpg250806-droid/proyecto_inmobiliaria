@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clustering simple por k-medias sobre precio, habitaciones y banos."""
+"""Clustering por k-medias sobre precio, habitaciones y banos."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,7 +46,6 @@ def main():
     frame["precio_original"] = pd.to_numeric(frame["precio_original"], errors="coerce")
     frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
-    # Cubisima es la fuente con mejor cobertura de precio/habitaciones/banos.
     data = frame[(frame["fuente"] == "Cubisima") & frame["precio_original"].notna() & frame["habitaciones"].notna() & frame["banos"].notna()].copy()
     if len(data) < 30:
         print("No hay suficientes datos completos para clustering.")
