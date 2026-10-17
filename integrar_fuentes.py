@@ -254,7 +254,7 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
                 continue
         if hogar_candidates:
             hogar_scores = [(p, len(pd.read_csv(p, dtype=str))) for p in hogar_candidates]
-            hogar_path = max(hogar_scores, key=lambda x: x[1])[0]
+            hogar_path = max(hogar_scores, key=lambda x: (x[1], x[0].name))[0]
         else:
             hogar_path = None
     else:
