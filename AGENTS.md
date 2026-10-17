@@ -4,6 +4,29 @@
 
 Este archivo define reglas para trabajar en el proyecto inmobiliario basado en anuncios de Revolico y fuentes complementarias.
 
+## Tematica y fecha de inicio
+
+- Tema: mercado inmobiliario cubano, con enfasis en La Habana.
+- Enfoque: relacion entre precio, características de la vivienda, moneda, tasas de cambio, migracion y crisis economica.
+- Fecha de inicio del tema y las preguntas: 29 de septiembre de 2026.
+- Las preguntas se responderan con datos recopilados, procesamiento reproducible y encuestas anonimas.
+
+## Preguntas de investigacion
+
+Pregunta principal:
+¿Qué características de una vivienda estan relacionadas con su precio de venta?
+
+Preguntas secundarias:
+1. ¿Cuál es el precio promedio de las viviendas?
+2. ¿Cómo varian los precios entre municipios?
+3. ¿Existe relacion entre habitaciones y precio?
+4. ¿Qué características aparecen con mayor frecuencia en las viviendas de precios altos?
+5. ¿Qué diferencias observables existen entre canales informales y fuentes estructuradas?
+6. ¿Se pueden agrupar las viviendas en diferentes tipos según sus características?
+7. ¿Cómo cambia el precio equivalente al convertir USD, CUP y EUR con tasas informal y formal?
+8. ¿Qué influencia ha tenido la migracion en la oferta, la demanda y los precios de las viviendas entre 2020 y 2026?
+9. ¿Qué parte del precio puede explicarse con los datos disponibles y qué queda sin cobertura?
+
 ## Objetivo del proyecto
 
 Analizar el mercado inmobiliario de La Habana a partir de anuncios reales, distinguiendo datos verificados, datos derivados y datos no disponibles. El proyecto debe ser reproducible y defendible academically.
@@ -18,7 +41,7 @@ Analizar el mercado inmobiliario de La Habana a partir de anuncios reales, disti
 
 ## Reglas de trabajo
 
-1. Preferir cambios pequeños, justificados y verificables.
+1. Preferir cambios justificados y verificables.
 2. Ejecutar pruebas disponibles antes de afirmar que algo funciona.
 3. No inventar valores para campos ausentes.
 4. Distinguir entre:
@@ -56,7 +79,7 @@ Analizar el mercado inmobiliario de La Habana a partir de anuncios reales, disti
 
 ## Commits
 
-- Usar commits pequeños y con mensaje técnico.
+- Usar mensajes técnicos y claros.
 - No subir datos grandes, outputs ni archivos temporales.
 - No subir guías personales ni material irrelevante.
 - No reescribir el historial sin una razón clara.
