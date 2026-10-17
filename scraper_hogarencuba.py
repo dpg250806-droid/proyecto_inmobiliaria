@@ -53,7 +53,7 @@ def number(text: str | None, pattern: str) -> float | None:
         return None
 
 
-def parse_detail(detail_text: str, title: str, url: str) -> dict:
+def parse_detail(detail_text: str, title: str, url: str, raw_html: str | None = None) -> dict:
     text = " ".join(detail_text.split())
     property_id = re.search(r"HEC\d+", title + " " + url)
     price_match = re.search(r"(?:por \$|por US\$)\s*([\d\.,]+)", title + " " + text)
@@ -61,6 +61,10 @@ def parse_detail(detail_text: str, title: str, url: str) -> dict:
     if price_match:
         raw = price_match.group(1)
         price_raw = float(raw.replace(".", "").replace(",", "."))
+    if price_raw is None:
+        json_price = re.search(r'"price"\s*:\s*"?\$?([\d\.,]+)"?', detail_text)
+        if json_price:
+            price_raw = float(json_price.group(1).replace(".", "").replace(",", "."))
     moneda = "USD"
     if re.search(r"(EUR|â‚¬)", title + " " + text, flags=re.IGNORECASE):
         moneda = "EUR"
@@ -71,14 +75,50 @@ def parse_detail(detail_text: str, title: str, url: str) -> dict:
         ubicacion_raw = " ".join(unquote(alcaldia_slug).replace("-", " ").split()).title()
     else:
         ubicacion_raw = "La Habana"
+    search_source = raw_html or detail_text
+    bedrooms_match = re.search(r'"numberOfBedrooms"\s*:\s*(\d+)', search_source)
+    habitaciones = float(bedrooms_match.group(1)) if bedrooms_match else number(text, r"(?:Cuartos?|habitaciones?)\s*:?\s*(\d[\d\.,]*)")
+    bathroom_text_match = re.search(r"Ba.{1,8}os\s*:??\s*(\d[\d\.,]*)", text, flags=re.IGNORECASE)
+    bathrooms_json_match = re.search(r'"numberOfFullBathrooms"\s*:\s*(\d+)', search_source)
+    if bathroom_text_match:
+        banos = float(bathroom_text_match.group(1))
+    elif bathrooms_json_match and int(bathrooms_json_match.group(1)) > 0:
+        banos = float(bathrooms_json_match.group(1))
+    else:
+        banos = None
     superficie = number(text, r"Superficie.*?(\d[\d\.,]*)\s*m(?:2|Â²)")
-    habitaciones = number(text, r"(?:Cuartos?|habitaciones?)\s*:?\s*(\d[\d\.,]*)")
-    banos = number(text, r"(?:Ba.os|Banos)\s*:??\s*(\d[\d\.,]*)")
     tipo = None
     tipo_match = re.search(r"(Casa|Apartamento|Penthouse|Villa|Duplex|DÃºplex)", title, flags=re.IGNORECASE)
     if tipo_match:
         tipo = tipo_match.group(1).lower().replace("Ã¡", "a").replace("Ãº", "u")
-    fecha_match = re.search(r"Actualizado:\s*hace[^.]*", text)
+    fecha_match = re.search(r"Actualizado:\s*hace\s+\d+\s+\w+", text)
+    lower = (text + " " + detail_text).lower()
+    features = {
+        "garaje": 1 if "garaje" in lower else 0,
+        "piscina": 1 if "piscina" in lower else 0,
+        "terraza": 1 if "terraza" in lower else 0,
+        "patio": 1 if "patio" in lower else 0,
+        "balcon": 1 if "balcon" in lower or "balcÃ³n" in lower else 0,
+        "jardin": 1 if "jardin" in lower or "jardÃ­n" in lower else 0,
+    }
+    return {
+        "fuente": "HogarEnCuba",
+        "id_local": property_id.group(0) if property_id else None,
+        "titulo": title,
+        "url": url,
+        "tipo_vivienda": tipo,
+        "ubicacion_raw": ubicacion_raw,
+        "habitaciones": habitaciones,
+        "banos": banos,
+        "superficie_m2": superficie,
+        "precio_original": price_raw,
+        "moneda": moneda,
+        "fecha_publicacion": (fecha_match.group(0).strip() if fecha_match else None),
+        "canal": "plataforma_estructurada",
+        "agencia_observada": "no verificado (plataforma individual)",
+        "texto_evidencia": text[:400],
+        **features,
+    }
     return {
         "fuente": "HogarEnCuba",
         "id_local": property_id.group(0) if property_id else None,
@@ -109,21 +149,24 @@ def run(max_pages: int = 1, delay: float = 1.0) -> pd.DataFrame:
                 detail_html = fetch(detail_url)
                 detail_soup = BeautifulSoup(detail_html, "html.parser")
                 detail_text = detail_soup.get_text(" ", strip=True)
-                record = parse_detail(detail_text, title, detail_url)
+                record = parse_detail(detail_text, title, detail_url, detail_html)
                 collected.append(record)
                 print(f"  {idx:03d}/{len(links)} {record['id_local']} {record['habitaciones']} hab {record['banos']} ban {record['superficie_m2']} m2")
                 time.sleep(delay)
             except Exception as error:
                 print(f"  ERROR {detail_url}: {error}")
         time.sleep(delay)
+        out_dir = Path(__file__).resolve().parent / "outputs" / "hogarencuba"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = out_dir / f"viviendas_hogarencuba_{stamp}.csv"
+        if collected:
+            pd.DataFrame(collected).to_csv(path, index=False, encoding="utf-8-sig")
     frame = pd.DataFrame(collected)
-    out_dir = Path(__file__).resolve().parent / "outputs" / "hogarencuba"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = out_dir / f"viviendas_hogarencuba_{stamp}.csv"
-    frame.to_csv(path, index=False, encoding="utf-8-sig")
-    print(f"\nGuardado: {path}")
-    print(frame.head().to_string(index=False)[:1500])
+    if not frame.empty:
+        frame.to_csv(path, index=False, encoding="utf-8-sig")
+        print(f"\nGuardado: {path}")
+        print(frame.head().to_string(index=False)[:1500])
     return frame
 
 
