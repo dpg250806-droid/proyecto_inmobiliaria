@@ -36,7 +36,7 @@ Resultados principales verificados:
 - `reprocesar_cubisima.py`: reprocesa el CSV local con el parser de moneda actual y escribe una copia auditada, sin red ni sobrescrituras.
 - `reprocesar_hogarencuba.py`: revalida online solo registros con diferencias detectables y genera un snapshot nuevo con valores previos y evidencia.
 - `integrar_fuentes.py`: prefiere la copia reprocesada de Cubisima más reciente; en su ausencia lee `viviendas_cubisima.csv`.
-- `convertir_precios_tasas.py`: convierte USD, EUR, CUP y, por defecto, CUC solo con tasas guardadas; `--cuc-usd-nominal` genera una variante optativa con equivalencia nominal 1 CUC = 1 USD, no una tasa de mercado.
+- `convertir_precios_tasas.py`: convierte USD, EUR, CUP y, por defecto, CUC solo con tasas guardadas; `--cuc-usd-nominal` aplica equivalencia nominal 1 CUC = 1 USD (no es una tasa de mercado) unicamente a anuncios con fecha de publicacion posterior a 2021.
 - `tests/test_price_currency.py`: pruebas offline de moneda, conversión, segmentación y migración.
 - Scripts exploratorios: `inspeccionar_revolico.py`, `buscar_datos_ocultos_revolico.py`, `diagnostico_json_revolico.py`, `extraer_datos_revolico.py`.
 
@@ -61,7 +61,7 @@ El snapshot `outputs/hogarencuba/viviendas_hogarencuba_revalidada_20261017_23265
 
 Se reconstruyeron los resultados desde la captura completa: maestro `outputs/integracion/dataset_maestro_20261017_234629.csv` (1.566 anuncios: 780 Revolico, 598 Cubisima y 188 HogarEnCuba) y conversión nominal CUC/USD `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261017_234636.csv`. El análisis preliminar está en `outputs/preguntas/preguntas_resueltas_20261017_234644.md`; gráficos, comparación, segmentación y clustering nuevos se guardaron en carpetas `corrida_20261017_235245/`, sin sobrescribir salidas anteriores. El informe final sigue pendiente de las entrevistas.
 
-Los análisis de precios originales separan moneda. No se comparan directamente importes USD, EUR, CUP y CUC. El registro actual de tasas no contiene CUC/CUP; la conversión normal deja 565 precios CUC como `tasa_cuc_no_disponible` y 6 como `precio_sospechoso`. Como escenario nominal solicitado y confirmado por la usuaria, se puede ejecutar `python convertir_precios_tasas.py --cuc-usd-nominal`: aplica 1 CUC = 1 USD a precios no sospechosos, preserva CUC en `precio_original` y registra el método en `metodo_conversion_cuc`. No representa una tasa de mercado o valor actual, no rellena tasas CUC/CUP y mantiene sin convertir los precios sospechosos. Las monedas no identificadas tampoco reciben equivalencia.
+Los análisis de precios originales separan moneda. No se comparan directamente importes USD, EUR, CUP y CUC. El registro actual de tasas no contiene CUC/CUP; la conversión normal deja los precios CUC como `tasa_cuc_no_disponible`. Los 546 anuncios CUC tienen fecha de publicación entre el 17/10/2023 y el 12/10/2026, es decir, todos posteriores a la desmonetización del CUC (2021). Por esa razón se ejecuta `python convertir_precios_tasas.py --cuc-usd-nominal`: aplica 1 CUC = 1 USD a precios no sospechosos publicados después de 2021, preserva CUC en `precio_original` y registra el método en `metodo_conversion_cuc` y la paridad en `fx_cuc_usd_nominal`. Los anuncios pre-2021 o sin fecha exacta no reciben la equivalencia (`cuc_pre_2021_no_convertido`, `sin_fecha_no_confirma_post_2021`). No representa una tasa de mercado o valor actual, no rellena tasas CUC/CUP y mantiene sin convertir los precios sospechosos. Las monedas no identificadas tampoco reciben equivalencia.
 
 Las pruebas locales enfocadas se ejecutan con `python -m unittest discover -s tests -v`; no acceden a internet ni escriben en `outputs/`.
 
@@ -127,6 +127,7 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-17 23:52` - Corregida la cobertura de moneda desconocida en tablas comparativas y resúmenes visuales; nuevas salidas fechadas, sin reemplazar las previas.
 - `2026-10-17 23:53` - Verificada la captura completa de HogarEnCuba: 188 URLs únicas, 10/10 páginas, 0 fallos; los 14 IDs discrepantes anteriores tienen precio/moneda actual con método de extracción registrado. Los CSV históricos siguen intactos.
 - `2026-10-17 23:54` - Validación final: 22 pruebas offline, compilación en memoria de 39 archivos Python y `git diff --check` sin errores.
+- `2026-10-18 00:24` - Rango de fechas de los 546 anuncios CUC de Cubisima: 17/10/2023 a 12/10/2026, 100% posteriores a 2021. La conversion nominal 1:1 quedo condicionada a esa fecha de publicacion y documentada como paridad, no como tasa; 540 convertidos y 6 precios sospechosos excluidos. 23 pruebas offline en verde.
 
 ## Limitaciones conocidas
 
@@ -172,7 +173,7 @@ Los CSV fuente y snapshots anteriores se mantienen intactos; los cambios de pars
 - Superficie disponible solo en parte de HogarEnCuba.
 - Moneda CUP requiere depuracion manual.
 - Los anuncios no equivalen a transacciones cerradas.
-- No hay tasa CUC/CUP registrada. Se conserva como predeterminado dejar CUC sin convertir; existe una salida nominal 1:1, claramente identificada como tal.
+- No hay tasa CUC/CUP registrada. Se conserva como predeterminado dejar CUC sin convertir; la salida nominal 1:1 solo se aplica a anuncios post-2021 con fecha exacta y queda identificada como paridad declarada, no como tasa de mercado.
 
 
 ## Cuestionario anonimo

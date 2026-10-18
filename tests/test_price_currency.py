@@ -320,9 +320,9 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
 
     def test_cuc_nominal_conversion_is_opt_in_and_keeps_suspicious_prices_unconverted(self):
         frame = pd.DataFrame([
-            {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False},
-            {"precio_original": 1, "moneda": "CUC", "precio_sospechoso": True},
-            {"precio_original": 100, "moneda": "USD", "precio_sospechoso": False},
+            {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False, "fecha_publicacion": "17/10/2023"},
+            {"precio_original": 1, "moneda": "CUC", "precio_sospechoso": True, "fecha_publicacion": "17/10/2023"},
+            {"precio_original": 100, "moneda": "USD", "precio_sospechoso": False, "fecha_publicacion": "17/10/2023"},
         ])
         converted = convertir(frame, self.rates, cuc_usd_nominal=True)
         self.assertEqual(converted.loc[0, "precio_usd_informal"], 100)
@@ -333,9 +333,30 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         self.assertEqual(converted.loc[2, "precio_usd_informal"], 100)
         self.assertEqual(
             converted.loc[0, "metodo_conversion_cuc"],
-            "nominal_1_CUC_igual_1_USD_confirmado_por_usuario_2026-10-17",
+            "nominal_1_CUC_igual_1_USD_anuncio_post_2021_confirmado_por_usuario_2026-10-18",
         )
+        self.assertEqual(converted.loc[0, "fx_cuc_usd_nominal"], 1.0)
         self.assertTrue(pd.isna(converted.loc[0, "fx_cuc_informal_cup"]))
+
+    def test_cuc_nominal_requires_post_2021_publication_date(self):
+        frame = pd.DataFrame([
+            {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False, "fecha_publicacion": "7/12/2019"},
+            {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False, "fecha_publicacion": None},
+            {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False, "fecha_publicacion": "Actualizado: hace 2 años"},
+            {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False, "fecha_publicacion": "2023-10-17"},
+        ])
+        converted = convertir(frame, self.rates, cuc_usd_nominal=True)
+        self.assertEqual(converted.loc[0, "conversion_estado_informal"], "cuc_pre_2021_no_convertido")
+        self.assertTrue(pd.isna(converted.loc[0, "precio_usd_informal"]))
+        self.assertEqual(converted.loc[1, "conversion_estado_informal"], "sin_fecha_no_confirma_post_2021")
+        self.assertEqual(converted.loc[2, "conversion_estado_informal"], "sin_fecha_no_confirma_post_2021")
+        self.assertEqual(converted.loc[3, "precio_usd_informal"], 100)
+        self.assertEqual(converted.loc[3, "fx_cuc_usd_nominal"], 1.0)
+        without_flag = convertir(frame, self.rates)
+        self.assertTrue(without_flag["precio_usd_informal"].isna().all())
+        self.assertTrue(
+            without_flag["conversion_estado_informal"].eq("tasa_cuc_no_disponible").all()
+        )
 
     def test_segments_are_calculated_separately_by_currency(self):
         frame = pd.DataFrame([

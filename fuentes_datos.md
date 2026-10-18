@@ -19,7 +19,7 @@ Actualizado: 2026-10-15.
 - Campos disponibles observados: tipo, zona, habitaciones, baños, precio, moneda, fecha, garaje, piscina, terraza, patio, balcon, jardin.
 - Fortaleza: mas variables estructuradas que Revolico.
 - El 17 de octubre se generó una copia auditada con 571 CUC y 54 sin precio, además de un maestro nuevo; el CSV original y los maestros previos siguen intactos.
-- Limitación: no hay tasa CUC/CUP verificada. La conversión estándar mantiene los 571 importes en CUC; existe un modo nominal 1 CUC = 1 USD solicitado por la usuaria, identificado como escenario y no como tasa de mercado.
+- Limitación: no hay tasa CUC/CUP verificada. La conversión estándar mantiene los importes en CUC; existe un modo nominal 1 CUC = 1 USD solicitado por la usuaria, identificado como paridad y no como tasa de mercado. Los 546 anuncios CUC se publicaron entre el 17/10/2023 y el 12/10/2026, todos posteriores a la desmonetización del CUC, por lo que el modo nominal solo se aplica a fechas post-2021.
 
 ## 3. Casas Oasis (fuente candidata verificada por busqueda web)
 

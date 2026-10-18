@@ -38,6 +38,31 @@ def normalizar_moneda(value):
     return None if currency in {"", "NAN", "NONE", "<NA>", "SIN_MONEDA"} else currency
 
 
+# Anio de desmonetizacion del CUC: solo anuncios posteriores se valoran en USD.
+CUC_DEMONETIZACION = pd.Timestamp("2021-01-01")
+METODO_CUC_NOMINAL = (
+    "nominal_1_CUC_igual_1_USD_anuncio_post_2021_confirmado_por_usuario_2026-10-18"
+)
+
+
+def parse_fecha_publicacion(value):
+    """Fecha exacta de publicacion; None si no existe o es relativa."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    if text.lower() in {"nan", "none", "<na>"}:
+        return None
+    if text.lower().startswith("actualizado"):
+        return None  # fechas relativas de HogarEnCuba: no confirman el anio
+    try:
+        parsed = pd.to_datetime(text, format="%Y-%m-%d")
+    except (ValueError, TypeError):
+        parsed = pd.to_datetime(text, errors="coerce", dayfirst=True)
+    return None if pd.isna(parsed) else parsed
+
+
 def convertir(
     frame: pd.DataFrame,
     rates: pd.DataFrame,
@@ -74,6 +99,11 @@ def convertir(
             return price / fx_usd, "convertido"
         if moneda == "CUC":
             if cuc_usd_nominal:
+                fecha_anuncio = parse_fecha_publicacion(row.get("fecha_publicacion", None))
+                if fecha_anuncio is None:
+                    return None, "sin_fecha_no_confirma_post_2021"
+                if fecha_anuncio < CUC_DEMONETIZACION:
+                    return None, "cuc_pre_2021_no_convertido"
                 return price, "convertido_nominal_1_CUC_1_USD"
             if fx_cuc is None or fx_usd is None or fx_cuc <= 0 or fx_usd <= 0:
                 return None, "tasa_cuc_no_disponible"
@@ -100,9 +130,12 @@ def convertir(
     if cuc_usd_nominal:
         cuc_rows = frame["moneda"].map(normalizar_moneda).eq("CUC")
         frame["metodo_conversion_cuc"] = None
-        frame.loc[cuc_rows, "metodo_conversion_cuc"] = (
-            "nominal_1_CUC_igual_1_USD_confirmado_por_usuario_2026-10-17"
-        )
+        frame.loc[cuc_rows, "metodo_conversion_cuc"] = METODO_CUC_NOMINAL
+        frame["fx_cuc_usd_nominal"] = None
+        convertidos_cuc = frame["conversion_estado_informal"].eq(
+            "convertido_nominal_1_CUC_1_USD"
+        ) | frame["conversion_estado_formal"].eq("convertido_nominal_1_CUC_1_USD")
+        frame.loc[convertidos_cuc, "fx_cuc_usd_nominal"] = 1.0
     if master_filename:
         frame["dataset_maestro_origen"] = master_filename
     frame["divergencia_informal_formal_usd_pct"] = 100 * (frame["precio_usd_informal"] / frame["precio_usd_formal"] - 1)
@@ -116,7 +149,10 @@ def main():
     parser.add_argument(
         "--cuc-usd-nominal",
         action="store_true",
-        help="Convierte CUC a USD con equivalencia nominal 1:1 (no es una tasa de mercado).",
+        help=(
+            "Convierte CUC a USD (1:1, no es una tasa de mercado) solo en anuncios "
+            "con fecha de publicacion posterior a 2021."
+        ),
     )
     args = parser.parse_args()
 
@@ -138,6 +174,10 @@ def main():
         mediana_usd_informal=("precio_usd_informal", "median"),
         mediana_usd_formal=("precio_usd_formal", "median"),
         cuc_sin_tasa=("conversion_estado_informal", lambda s: int(s.eq("tasa_cuc_no_disponible").sum())),
+        cuc_no_post_2021=(
+            "conversion_estado_informal",
+            lambda s: int(s.isin(["cuc_pre_2021_no_convertido", "sin_fecha_no_confirma_post_2021"]).sum()),
+        ),
     ).reset_index()
     stats_path = OUT / f"resumen_conversion{suffix}_{stamp}.csv"
     with stats_path.open("x", encoding="utf-8-sig", newline="") as handle:

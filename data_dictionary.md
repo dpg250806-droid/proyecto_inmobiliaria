@@ -110,7 +110,7 @@ El maestro local más reciente es `outputs/integracion/dataset_maestro_20261017_
 
 ## Tasas y equivalencias
 
-El registro local de tasas no contiene `cuc_informal_cup` ni `cuc_formal_cup`. La conversión nominal actual es `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261017_234636.csv`; usa `--cuc-usd-nominal` bajo la decisión explícita de la usuaria de aplicar 1 CUC = 1 USD como equivalencia nominal, no como tasa de mercado. De los 546 registros CUC, 540 se convirtieron y 6 sospechosos quedaron sin conversión. Se conserva el importe y la moneda originales; no se inventa una tasa CUC/CUP.
+El registro local de tasas no contiene `cuc_informal_cup` ni `cuc_formal_cup`. La conversión nominal actual es `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261018_002424.csv`; usa `--cuc-usd-nominal` bajo la decisión explícita de la usuaria de aplicar 1 CUC = 1 USD como equivalencia nominal, no como tasa de mercado, y solo a anuncios con `fecha_publicacion` posterior a 2021 (los 546 registros CUC van del 17/10/2023 al 12/10/2026). De ellos, 540 se convirtieron y 6 sospechosos quedaron sin conversión; el método queda en `metodo_conversion_cuc` y la paridad aplicada en `fx_cuc_usd_nominal`. Se conserva el importe y la moneda originales; no se inventa una tasa CUC/CUP.
 
 Los análisis por precio, zona, habitaciones, canal, segmentación y clustering separan por moneda y excluyen moneda desconocida de las comparaciones de importes. Los resultados antiguos no se regeneran solos al cambiar parsers.
 
