@@ -47,7 +47,7 @@ def main():
     frame.to_csv(path, index=False, encoding="utf-8-sig")
 
     summary = frame.groupby(["fuente", "canal_analisis"]).agg(
-        anuncios=("precio_original", "count"),
+        anuncios=("precio_original", "size"),
         precio_valido=("precio_original", lambda s: pd.notna(s).sum()),
         sospechosos=("precio_sospechoso", lambda s: int(s.sum())),
         banos=("banos", lambda s: pd.notna(s).sum()),

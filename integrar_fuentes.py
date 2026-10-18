@@ -204,7 +204,7 @@ def dataframe_hogarencuba(path: Path) -> pd.DataFrame:
     for idx, item in source.iterrows():
         price, suspicious = normalizar_precio(item.get("precio_original", None), item.get("moneda", None))
         if "precio_sospechoso" in source.columns and pd.notna(item.get("precio_sospechoso", None)):
-            suspicious = str(item.get("precio_sospechoso")).strip().lower().replace("Ã­", "i") in {"true", "1", "si", "yes"}
+            suspicious = str(item.get("precio_sospechoso")).strip().lower().replace("\u00ed", "i") in {"true", "1", "si", "yes"}
         row = {
             "fuente": "HogarEnCuba",
             "snapshot_origen": str(path.name),

@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from comparativo_fuentes import channel_summary, prepare, summary_table
-from convertir_precios_tasas import convertir
+from convertir_precios_tasas import convertir, latest_rate_file
 from integrar_fuentes import hogarencuba_source_path
 from analisis_preguntas import rank_associations
 from precio_moneda import extraer_precio_moneda, normalizar_moneda, parsear_importe
@@ -357,6 +357,20 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         self.assertTrue(
             without_flag["conversion_estado_informal"].eq("tasa_cuc_no_disponible").all()
         )
+
+    def test_rate_selection_ignores_blocked_snapshots_without_rates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            util = folder / "tasas_cambio_20261015_200919.csv"
+            bloqueado = folder / "tasas_cambio_20261018_000000.csv"
+            vacio = folder / "tasas_cambio_20261019_000000.csv"
+            pd.DataFrame([{"fecha_utc": "2026-10-15", "usd_informal_cup": "796"}]).to_csv(util, index=False)
+            pd.DataFrame([{"fecha_utc": "2026-10-18", "usd_informal_cup": None}]).to_csv(bloqueado, index=False)
+            vacio.write_bytes(b"")
+            self.assertEqual(latest_rate_file(folder, "tasas_cambio_*.csv"), util)
+            pd.DataFrame([{"fecha_utc": "2026-10-20", "usd_informal_cup": None}]).to_csv(util, index=False)
+            with self.assertRaises(ValueError):
+                latest_rate_file(folder, "tasas_cambio_*.csv")
 
     def test_segments_are_calculated_separately_by_currency(self):
         frame = pd.DataFrame([

@@ -21,6 +21,35 @@ def latest_file(directory: Path, pattern: str) -> Path:
     return files[-1]
 
 
+def latest_rate_file(directory: Path, pattern: str) -> Path:
+    """Snapshot de tasas mas reciente que contenga al menos una tasa USD.
+
+    Un intento bloqueado de `tasas_cambio.py` guarda un registro de auditoria con
+    las tasas vacias; ese archivo no debe reemplazar a un registro util.
+    """
+    files = sorted(directory.glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"No encontro {pattern} en {directory}")
+    descartados = []
+    for path in reversed(files):
+        try:
+            snapshot = pd.read_csv(path, dtype=str)
+        except Exception:
+            descartados.append(path.name)
+            continue
+        usd = snapshot.get("usd_informal_cup") if not snapshot.empty else None
+        usable = usd is not None and pd.to_numeric(usd, errors="coerce").notna().any()
+        if usable:
+            if descartados:
+                print("Snapshots de tasas descartados (sin tasa USD): " + ", ".join(descartados))
+            return path
+        descartados.append(path.name)
+    raise ValueError(
+        f"Ningun {pattern} en {directory} contiene una tasa USD registrada. "
+        "Registra tasas manuales verificadas con tasas_cambio.py o carga el HTML local de ElToque."
+    )
+
+
 def to_float(value):
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -158,7 +187,7 @@ def main():
 
     OUT.mkdir(parents=True, exist_ok=True)
     master_path = latest_file(MASTER_DIR, "dataset_maestro_*.csv")
-    rate_path = latest_file(RATE_DIR, "tasas_cambio_*.csv")
+    rate_path = latest_rate_file(RATE_DIR, "tasas_cambio_*.csv")
     frame = pd.read_csv(master_path, dtype=str)
     rates = pd.read_csv(rate_path, dtype=str)
     converted = convertir(frame, rates, master_path.name, cuc_usd_nominal=args.cuc_usd_nominal)

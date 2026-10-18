@@ -128,6 +128,7 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-17 23:53` - Verificada la captura completa de HogarEnCuba: 188 URLs únicas, 10/10 páginas, 0 fallos; los 14 IDs discrepantes anteriores tienen precio/moneda actual con método de extracción registrado. Los CSV históricos siguen intactos.
 - `2026-10-17 23:54` - Validación final: 22 pruebas offline, compilación en memoria de 39 archivos Python y `git diff --check` sin errores.
 - `2026-10-18 00:24` - Rango de fechas de los 546 anuncios CUC de Cubisima: 17/10/2023 a 12/10/2026, 100% posteriores a 2021. La conversion nominal 1:1 quedo condicionada a esa fecha de publicacion y documentada como paridad, no como tasa; 540 convertidos y 6 precios sospechosos excluidos. 23 pruebas offline en verde.
+- `2026-10-18 00:51` - Revision integral: pipeline offline completo (auditoria, EDA, limpieza, integracion, conversion, comparativo, segmentacion, clustering, preguntas, validacion, visualizaciones) y smokes de 1 pagina de Cubisima y HogarEnCuba mas Revolico local (8 paginas, 780 unicos). Corregidos: etiqueta `anuncios` de `limpieza_integrada.py` (size, no count), texto dinamico del bloque de clustering en `analisis_preguntas.py`, patron de `sospechoso` con escape ASCII, seleccion del snapshot de tasas util (ignora intentos bloqueados) y `.gitignore` para enlaces Revolico fechados. 24 pruebas offline en verde; `informe_preliminar.md` actualizado con los numeros vigentes.
 
 ## Limitaciones conocidas
 

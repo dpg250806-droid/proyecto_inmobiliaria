@@ -6,7 +6,7 @@ revolico_pagina_*_files/
 # Respaldos locales y resultados derivados; no incluirlos accidentalmente en Git.
 /data/
 /outputs/
-/enlaces_anuncios_revolico_reparado.csv
+/enlaces_anuncios_revolico_reparado*.csv
 /viviendas_cubisima.csv
 
 # Archivos temporales de Python

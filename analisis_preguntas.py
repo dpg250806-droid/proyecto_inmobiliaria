@@ -193,7 +193,21 @@ def main():
     lines.append("")
 
     lines.append("## 7. Agrupaciones de viviendas")
-    lines.append("El script `clustering_viviendas.py` agrupa por separado cada moneda; los resultados guardados corresponden a snapshots anteriores y deben regenerarse tras actualizar el maestro.")
+    cluster_files = sorted((ROOT / "outputs" / "clustering").glob("clusters_*.csv"))
+    if cluster_files:
+        latest_cluster = cluster_files[-1]
+        grupos = pd.read_csv(latest_cluster, usecols=["cluster"])["cluster"].nunique()
+        lines.append(
+            "El script `clustering_viviendas.py` agrupa por separado cada moneda. "
+            f"Resultado vigente: `{latest_cluster.name}` con {grupos} grupos; "
+            "los centros estan en `centroides_clusters_*.csv`. "
+            "La agrupacion actual cubre Cubisima (CUC), la unica moneda con masa suficiente para k-means."
+        )
+    else:
+        lines.append(
+            "El script `clustering_viviendas.py` agrupa por separado cada moneda; "
+            "aun no hay resultados guardados en `outputs/clustering/`."
+        )
     lines.append("")
 
     lines.append("## 8. Migracion y mercado (tratamiento recomendado)")
