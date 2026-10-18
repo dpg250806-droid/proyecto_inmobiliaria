@@ -240,28 +240,30 @@ def dataframe_hogarencuba(path: Path) -> pd.DataFrame:
     return frame[STANDARD_COLUMNS]
 
 
+def cubisima_source_path(root: Path) -> Path:
+    corrected = sorted((root / "outputs" / "cubisima").glob("viviendas_cubisima_reprocesada_*.csv"))
+    return corrected[-1] if corrected else root / "viviendas_cubisima.csv"
+
+
+def hogarencuba_source_path(root: Path) -> Path | None:
+    directory = root / "outputs" / "hogarencuba"
+    candidates = []
+    for path in directory.glob("viviendas_hogarencuba_*.csv"):
+        try:
+            if path.stat().st_size > 0:
+                row_count = len(pd.read_csv(path, dtype=str))
+                if row_count:
+                    candidates.append((row_count, path.stat().st_mtime, path))
+        except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeError):
+            continue
+    return max(candidates, key=lambda item: (item[0], item[1]))[2] if candidates else None
+
 
 def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
     root = REPO_ROOT
     revolico_path = root / "anuncios_revolico_procesados.csv"
-    cubisima_path = root / "viviendas_cubisima.csv"
-    hogar_dir = root / "outputs" / "hogarencuba"
-    if hogar_dir.exists():
-        hogar_candidates = []
-        for candidate in hogar_dir.glob("viviendas_hogarencuba_*.csv"):
-            try:
-                if candidate.stat().st_size > 0 and len(pd.read_csv(candidate, dtype=str)) > 0:
-                    hogar_candidates.append(candidate)
-            except Exception:
-                continue
-        if hogar_candidates:
-            hogar_scores = [(p, len(pd.read_csv(p, dtype=str))) for p in hogar_candidates]
-            hogar_path = max(hogar_scores, key=lambda x: (x[1], x[0].name))[0]
-        else:
-            hogar_path = None
-    else:
-        hogar_path = None
-        hogar_path = None
+    cubisima_path = cubisima_source_path(root)
+    hogar_path = hogarencuba_source_path(REPO_ROOT)
 
     if not revolico_path.exists():
         raise FileNotFoundError(revolico_path)

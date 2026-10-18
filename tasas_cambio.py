@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Obtiene o registra tasas de cambio USD/EUR -> CUP (informal/formal).
+"""Obtiene o registra tasas de cambio USD/EUR/CUC -> CUP (informal/formal).
 
 Los sitios de ElToque usan proteccion anti-bot; si el acceso automatico falla,
 el script no fabrica valores. Se puede pasar un HTML guardado o registrar valores
@@ -132,8 +132,17 @@ def main():
     parser.add_argument("--eur-informal", type=float, help="Valor manual informal EUR->CUP.")
     parser.add_argument("--usd-formal", type=float, help="Valor manual formal USD->CUP.")
     parser.add_argument("--eur-formal", type=float, help="Valor manual formal EUR->CUP.")
+    parser.add_argument("--cuc-informal", type=float, help="Tasa manual verificada informal CUC->CUP.")
+    parser.add_argument("--cuc-formal", type=float, help="Tasa manual verificada formal CUC->CUP.")
+    parser.add_argument("--fuente-cuc", help="Fuente independiente que respalda la tasa CUC/CUP manual.")
     parser.add_argument("--fuente", default="ElToque", help="Fuente registrada.")
     args = parser.parse_args()
+    for name in ("cuc_informal", "cuc_formal"):
+        value = getattr(args, name)
+        if value is not None and value <= 0:
+            parser.error(f"--{name.replace('_', '-')} debe ser mayor que cero.")
+    if any(value is not None for value in (args.cuc_informal, args.cuc_formal)) and not args.fuente_cuc:
+        parser.error("Indica --fuente-cuc cuando registres una tasa CUC/CUP.")
 
     body = None
     attempts = []
@@ -148,15 +157,19 @@ def main():
         "fecha_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "fuente": args.fuente,
         "url": args.url if not args.html else str(Path(args.html)),
-        "estado_acceso": ("ok" if body else ("registro_manual" if any(v is not None for v in [args.usd_informal, args.eur_informal, args.usd_formal, args.eur_formal]) else "bloqueado_o_no_disponible")),
+        "estado_acceso": ("ok" if body else ("registro_manual" if any(v is not None for v in [args.usd_informal, args.eur_informal, args.usd_formal, args.eur_formal, args.cuc_informal, args.cuc_formal]) else "bloqueado_o_no_disponible")),
         "usd_informal_cup": args.usd_informal if args.usd_informal is not None else parsed.get("usd_informal"),
         "eur_informal_cup": args.eur_informal if args.eur_informal is not None else parsed.get("eur_informal"),
         "usd_formal_cup": args.usd_formal if args.usd_formal is not None else parsed.get("usd_formal_buy"),
         "eur_formal_cup": args.eur_formal if args.eur_formal is not None else parsed.get("eur_formal_buy"),
+        "cuc_informal_cup": args.cuc_informal,
+        "cuc_formal_cup": args.cuc_formal,
+        "fuente_cuc": args.fuente_cuc,
         "metodo_acceso": ", ".join(a["method"] for a in attempts) if attempts else "manual",
         "intentos": str(attempts).replace("\"", "'"),
         "observacion": (
-            "Si los valores automated salieron vacios, registrar tasas manuales verificadas o cargar HTML local. "
+            "Si los valores automaticos salieron vacios, registrar tasas manuales verificadas o cargar HTML local. "
+            "CUC no se consulta automaticamente; sus campos solo se registran con una tasa manual verificada. "
             "Las tasas formal/informal deben usarse solo para conversion documental."
         ),
     }

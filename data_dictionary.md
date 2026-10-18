@@ -1,6 +1,6 @@
 # Diccionario de datos del proyecto inmobiliario (Revolico, La Habana)
 
-Etapa: auditoria inicial. Fecha de documentacion: 2026-10-15.
+Etapa: auditoria local y correccion de parseo de moneda. Actualizado: 2026-10-17.
 
 Los tipos indicados corresponden a la lectura por pandas de los CSV actuales. Las definiciones se basan en el codigo existente y en la auditoria verificada; no se incorporan datos hipoteticos.
 
@@ -87,13 +87,33 @@ Mismas columnas que el dataset procesado. Ausencias verificadas:
 ### `viviendas_limpias.csv`
 2 filas x 3 columnas (`municipio`, `precio`, `habitaciones`). Generado por `analisis_inmobiliario.py` con datos inventados. No representa anuncios reales.
 
-## Archivo no integrado: Cubisima
+## Cubisima (snapshot local)
 
-Los siguientes archivos existen localmente sin trackear en Git y no se han integrado en esta etapa:
-- `scraper_cubisima.py`
-- `viviendas_cubisima.csv`
-- `explorar_cubisima.py`
-- `revisar_cubisima.py`
-- `auditar_cubisima.py`
+`viviendas_cubisima.csv` contiene 625 filas y 19 columnas. Se usa como entrada local para Cubisima y sus registros ya aparecen en los maestros locales; por tanto, no es correcto describir esta fuente como “no integrada”.
 
-`viviendas_cubisima.csv` tiene 625 filas x 19 columnas, pero no se uso como fuente principal ni se mezclo con Revolico en esta etapa.
+| Campo | Estado observado en el CSV local |
+|---|---|
+| `precio` | 571 números detectados en texto con símbolo `€`; 54 ausentes porque la tarjeta dice “Sin precio”. |
+| `moneda` | Los 571 con precio están guardados como `EUR`; sin precio queda vacía. |
+| `url` | En los 571 con precio, el slug contiene `-<mismo importe>-cuc-`; el parser actual lo usa para clasificar CUC cuando coincide exactamente con el importe mostrado. |
+| `texto_tarjeta` | Evidencia original preservada por fila; debe seguir tratándose como texto fuente, no como feature aislada. |
+
+El archivo original guardado sigue intacto. La copia auditada `outputs/cubisima/viviendas_cubisima_reprocesada_20261017_221516.csv` contiene los 571 casos como CUC y añade los campos anteriores para auditoría. `integrar_fuentes.py` utilizó esa copia para crear `outputs/integracion/dataset_maestro_20261017_221530.csv`; el snapshot anterior no fue sobrescrito.
+
+## HogarEnCuba y datos maestros locales
+
+El snapshot histórico `outputs/hogarencuba/viviendas_hogarencuba_revisada_20261017_014824.csv` contiene 155 fichas y se conserva intacto. Una comparación ampliada encontró 14 fichas con precio o moneda discordantes; se consultaron las 14 URLs y todas respondieron HTTP 200. Para esas fichas, el precio actual se verificó contra la oferta JSON-LD cuyo `sku`/`identifier` coincide con el ID local. Si el cuerpo del propio anuncio declara `PRECIO EN EUR`, esa etiqueta es la autoridad para la moneda aunque el título o JSON-LD indiquen USD. Se añadieron `precio_metodo_extraccion` y `precio_evidencia` para dejar la procedencia auditable.
+
+El snapshot `outputs/hogarencuba/viviendas_hogarencuba_revalidada_20261017_232654.csv` conserva las 155 filas del origen y revalida en vivo 14 discrepancias; las otras 141 se conservan sin recaptura y tienen estado explícito `sin_discrepancia_en_evidencia_local`. El origen histórico permanece intacto. Después se completó una captura nueva en `outputs/hogarencuba/viviendas_hogarencuba_20261017_234325.csv`: 188 URLs únicas, 10 de 10 páginas y 0 fichas fallidas. Los precios llevan `precio_metodo_extraccion` y `precio_evidencia`; los 14 IDs discrepantes anteriores aparecen con el parser actual. HEC2258 se registra como EUR por la etiqueta expresa `PRECIO EN EUR`; los otros 13 casos de ese grupo tienen moneda USD del JSON-LD asociado al ID exacto.
+
+El maestro local más reciente es `outputs/integracion/dataset_maestro_20261017_234629.csv`, con 1.566 filas: 780 Revolico, 598 Cubisima y 188 HogarEnCuba. El CSV original de Cubisima y los maestros anteriores continúan sin modificaciones. El análisis preliminar basado en ese maestro está en `outputs/preguntas/preguntas_resueltas_20261017_234644.md`; no es el informe final, pendiente de las entrevistas.
+
+## Tasas y equivalencias
+
+El registro local de tasas no contiene `cuc_informal_cup` ni `cuc_formal_cup`. La conversión nominal actual es `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261017_234636.csv`; usa `--cuc-usd-nominal` bajo la decisión explícita de la usuaria de aplicar 1 CUC = 1 USD como equivalencia nominal, no como tasa de mercado. De los 546 registros CUC, 540 se convirtieron y 6 sospechosos quedaron sin conversión. Se conserva el importe y la moneda originales; no se inventa una tasa CUC/CUP.
+
+Los análisis por precio, zona, habitaciones, canal, segmentación y clustering separan por moneda y excluyen moneda desconocida de las comparaciones de importes. Los resultados antiguos no se regeneran solos al cambiar parsers.
+
+## Archivos locales
+
+`.gitignore` excluye `data/`, `outputs/` y los CSV locales derivados de Revolico/Cubisima para evitar añadir datos o resultados accidentalmente. No se deben borrar ni versionar como parte de esta revisión.

@@ -12,6 +12,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from precio_moneda import normalizar_moneda
+
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
 OUT = ROOT / "outputs" / "segmentacion"
@@ -32,21 +34,24 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
     frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
     frame["superficie_m2"] = pd.to_numeric(frame["superficie_m2"], errors="coerce") if "superficie_m2" in frame else pd.NA
-    frame = frame[frame["precio_original"].notna() & frame["habitaciones"].notna()].copy()
+    frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
+    if "precio_sospechoso" in frame:
+        sospechoso = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
+    else:
+        sospechoso = pd.Series(False, index=frame.index)
+    frame = frame[
+        frame["precio_original"].notna()
+        & frame["habitaciones"].notna()
+        & frame["moneda"].ne("")
+        & ~sospechoso
+    ].copy()
     if frame.empty:
         return frame
 
-    def price_group(value):
-        if pd.isna(value):
-            return "sin precio"
-        # Usar percentiles globales para un primer perfil.
-        q1 = frame["precio_original"].quantile(0.33)
-        q2 = frame["precio_original"].quantile(0.66)
-        if value <= q1:
-            return "economica"
-        if value <= q2:
-            return "media"
-        return "alta"
+    def price_groups(prices):
+        q1 = prices.quantile(0.33)
+        q2 = prices.quantile(0.66)
+        return prices.map(lambda value: "economica" if value <= q1 else "media" if value <= q2 else "alta")
 
     def room_profile(value):
         if value <= 2:
@@ -55,7 +60,7 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
             return "mediana (3-4)"
         return "amplia (5+)"
 
-    frame["grupo_precio"] = frame["precio_original"].apply(price_group)
+    frame["grupo_precio"] = frame.groupby("moneda", group_keys=False)["precio_original"].apply(price_groups)
     frame["perfil_habitaciones"] = frame["habitaciones"].apply(room_profile)
     frame["con_banos"] = frame["banos"].notna()
     frame["con_m2"] = frame["superficie_m2"].notna()
@@ -63,7 +68,7 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
-    table = frame.groupby(["grupo_precio", "perfil_habitaciones"]).agg(
+    table = frame.groupby(["moneda", "grupo_precio", "perfil_habitaciones"]).agg(
         anuncios=("precio_original", "count"),
         precio_mediano=("precio_original", "median"),
         habitaciones_mediana=("habitaciones", "median"),
@@ -74,28 +79,38 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_segment(frame: pd.DataFrame, out: Path):
-    fig, ax = plt.subplots(figsize=(9, 5))
-    palette = {"economica": "#9bb7d4", "media": "#4472c4", "alta": "#1f3864"}
-    for grupo, g in frame.groupby("grupo_precio"):
-        ax.scatter(g["habitaciones"], g["precio_original"], label=grupo, alpha=0.55, s=45, color=palette.get(grupo))
-    ax.set_xlabel("Habitaciones")
-    ax.set_ylabel("Precio original (moneda nativa)")
-    ax.set_title("Perfil de viviendas por precio y habitaciones")
-    ax.legend(title="grupo por precio")
-    plt.tight_layout()
-    fig.savefig(out / "segmentos_precio_habitaciones.png", dpi=140, facecolor="white")
-    plt.close(fig)
+    graph = sns.relplot(
+        data=frame,
+        x="habitaciones",
+        y="precio_original",
+        hue="grupo_precio",
+        col="moneda",
+        col_wrap=2,
+        kind="scatter",
+        alpha=0.55,
+        height=4,
+        aspect=1.2,
+        palette={"economica": "#9bb7d4", "media": "#4472c4", "alta": "#1f3864"},
+    )
+    graph.set_axis_labels("Habitaciones", "Precio original")
+    graph.set_titles("Moneda: {col_name}")
+    graph.fig.suptitle("Perfil por precio y habitaciones (precios separados por moneda)", y=1.02)
+    graph.fig.savefig(out / "segmentos_precio_habitaciones.png", dpi=140, facecolor="white")
+    plt.close(graph.fig)
 
 
 def plot_source_segment(frame: pd.DataFrame, out: Path):
-    table = frame.groupby(["fuente", "grupo_precio"]).size().unstack(fill_value=0)
-    counts = table.div(table.sum(axis=1), axis=0) * 100
-    counts = counts.fillna(0)
-    fig, ax = plt.subplots(figsize=(9, 5))
-    counts.plot(kind="bar", stacked=True, ax=ax, colormap="Blues")
-    ax.set_title("Composicion de grupos de precio por fuente (%)")
-    ax.set_ylabel("Porcentaje")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha="right")
+    currencies = sorted(frame["moneda"].dropna().unique())
+    fig, axes = plt.subplots(1, len(currencies), figsize=(7 * len(currencies), 5), squeeze=False)
+    for ax, currency in zip(axes[0], currencies):
+        table = frame.loc[frame["moneda"].eq(currency)].groupby(["fuente", "grupo_precio"]).size().unstack(fill_value=0)
+        counts = table.div(table.sum(axis=1), axis=0).fillna(0) * 100
+        counts.plot(kind="bar", stacked=True, ax=ax, colormap="Blues")
+        ax.set_title(f"Moneda: {currency}")
+        ax.set_ylabel("Porcentaje")
+        ax.set_xlabel("Fuente")
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha="right")
+    fig.suptitle("Grupos de precio por fuente, separados por moneda")
     plt.tight_layout()
     fig.savefig(out / "segmentos_precio_por_fuente.png", dpi=140, facecolor="white")
     plt.close(fig)

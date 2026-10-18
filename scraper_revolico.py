@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urljoin
@@ -189,14 +190,17 @@ def guardar_cache(origen: str, html: str, guardar: bool) -> None:
     if not guardar:
         return
     CACHE_ONLINE.mkdir(parents=True, exist_ok=True)
-    (CACHE_ONLINE / origen).write_text(html, encoding="utf-8")
+    sello = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    ruta = CACHE_ONLINE / f"{Path(origen).stem}_{sello}{Path(origen).suffix}"
+    with ruta.open("x", encoding="utf-8") as handle:
+        handle.write(html)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scraper de Revolico para inmobiliaria en La Habana.")
     parser.add_argument("--motor", choices=["auto", "playwright", "requests", "local"], default="auto")
     parser.add_argument("--max-paginas", type=int, default=8)
-    parser.add_argument("--salida", type=Path, default=SALIDA_POR_DEFECTO)
+    parser.add_argument("--salida", type=Path, help="Destino nuevo; si no se indica se crea un archivo fechado.")
     parser.add_argument("--espera", type=float, default=2.0)
     parser.add_argument("--no-guardar-html", action="store_true")
     args = parser.parse_args()
@@ -274,14 +278,18 @@ def main() -> None:
     if tabla.empty:
         raise RuntimeError("No se extrajeron anuncios. Revise el bloqueo online o las paginas locales.")
 
-    args.salida.parent.mkdir(parents=True, exist_ok=True)
-    tabla.to_csv(args.salida, index=False, encoding="utf-8-sig")
+    salida = args.salida or SALIDA_POR_DEFECTO.with_name(
+        f"{SALIDA_POR_DEFECTO.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{SALIDA_POR_DEFECTO.suffix}"
+    )
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    with salida.open("x", encoding="utf-8-sig", newline="") as handle:
+        tabla.to_csv(handle, index=False)
 
     print("\n--- RESULTADO ---")
     print(f"Estado online: {estado_online}")
     print(f"Anuncios antes de quitar duplicados: {len(todos)}")
     print(f"Anuncios unicos guardados: {len(tabla)}")
-    print(f"Archivo guardado: {args.salida}")
+    print(f"Archivo guardado: {salida}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,12 @@ paginas_revolico/
 revolico_pagina_*_files/
 *.html
 
+# Respaldos locales y resultados derivados; no incluirlos accidentalmente en Git.
+/data/
+/outputs/
+/enlaces_anuncios_revolico_reparado.csv
+/viviendas_cubisima.csv
+
 # Archivos temporales de Python
 __pycache__/
 *.pyc

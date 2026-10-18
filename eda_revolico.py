@@ -41,6 +41,7 @@ def principal() -> None:
 
     precio = pd.to_numeric(df["precio"], errors="coerce")
     habitaciones = pd.to_numeric(df["habitaciones"], errors="coerce")
+    moneda = df["moneda"].fillna("").astype(str).str.strip().str.upper()
     municipio = df["municipio"]
 
     lineas = []
@@ -78,26 +79,40 @@ def principal() -> None:
 
     lineas.append("## 5. Precios")
     lineas.append("")
-    lineas.append(fmt_tabla([{"indicador": k, "valor": (f"{v:,.2f}" if isinstance(v, float) else v)} for k, v in [
-        ("observaciones con precio", int(precio.notna().sum())),
-        ("precio minimo", float(precio.min())),
-        ("percentil 25", float(precio.quantile(0.25))),
-        ("mediana", float(precio.median())),
-        ("percentil 75", float(precio.quantile(0.75))),
-        ("precio maximo", float(precio.max())),
-        ("media", float(precio.mean())),
-        ("desviacion estandar", float(precio.std())),
-    ]]))
+    price_frame = pd.DataFrame({"precio": precio, "moneda": moneda})
+    price_frame = price_frame[price_frame["precio"].notna() & price_frame["moneda"].ne("")]
+    currency_stats = []
+    for currency, group in price_frame.groupby("moneda"):
+        currency_stats.append({
+            "moneda": currency,
+            "observaciones": len(group),
+            "minimo": round(group["precio"].min(), 2),
+            "percentil_25": round(group["precio"].quantile(0.25), 2),
+            "mediana": round(group["precio"].median(), 2),
+            "percentil_75": round(group["precio"].quantile(0.75), 2),
+            "maximo": round(group["precio"].max(), 2),
+            "media": round(group["precio"].mean(), 2),
+            "desviacion_estandar": round(group["precio"].std(), 2),
+        })
+    lineas.append(fmt_tabla(currency_stats))
     lineas.append("")
-    lineas.append("Distribucion por moneda:")
+    lineas.append("Los importes se mantienen en su moneda original y no se comparan entre monedas.")
     lineas.append("")
-    lineas.append(fmt_tabla([{"moneda": (str(k) if pd.notna(k) else "NA"), "cantidad": int(v)} for k, v in df["moneda"].value_counts(dropna=False).items()]))
+    lineas.append("Distribucion por moneda (incluye datos no identificados):")
+    lineas.append("")
+    lineas.append(fmt_tabla([{"moneda": value or "SIN_MONEDA", "cantidad": int(count)} for value, count in moneda.value_counts(dropna=False).items()]))
     lineas.append("")
     lineas.append("Precios sospechosos:")
     lineas.append("")
-    lineas.append(f"- Precio < 100: {int(precio.lt(100).sum())}")
-    lineas.append(f"- Precio > 100000: {int(precio.gt(100000).sum())}")
-    lineas.append(f"- Precio igual a 1: {int(precio.eq(1).sum())}")
+    suspicious_rows = []
+    for currency, group in price_frame.groupby("moneda"):
+        suspicious_rows.append({
+            "moneda": currency,
+            "precio_menor_100": int(group["precio"].lt(100).sum()),
+            "precio_mayor_100000": int(group["precio"].gt(100000).sum()),
+            "precio_igual_a_1": int(group["precio"].eq(1).sum()),
+        })
+    lineas.append(fmt_tabla(suspicious_rows))
     lineas.append("")
 
     lineas.append("## 6. Habitaciones")
@@ -110,11 +125,19 @@ def principal() -> None:
 
     lineas.append("## 7. Relacion precio-habitaciones (solo datos disponibles)")
     lineas.append("")
-    subset = df[["precio", "habitaciones"]].apply(pd.to_numeric, errors="coerce").dropna()
-    if len(subset) >= 3:
-        correlacion = subset["precio"].corr(subset["habitaciones"])
-        lineas.append(f"- Observaciones usables: {len(subset)}")
-        lineas.append(f"- Correlacion de Pearson precio-habitaciones: {correlacion:.4f}")
+    subset = pd.DataFrame({"precio": precio, "habitaciones": habitaciones, "moneda": moneda})
+    subset = subset.dropna(subset=["precio", "habitaciones"])
+    subset = subset[subset["moneda"].ne("")]
+    correlations = []
+    for currency, group in subset.groupby("moneda"):
+        if len(group) >= 3:
+            correlations.append({
+                "moneda": currency,
+                "observaciones": len(group),
+                "correlacion_pearson": round(group["precio"].corr(group["habitaciones"]), 4),
+            })
+    if correlations:
+        lineas.append(fmt_tabla(correlations))
     else:
         lineas.append("No hay suficientes observaciones para calcular la correlacion.")
     lineas.append("")

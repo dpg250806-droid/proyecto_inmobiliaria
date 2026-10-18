@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from precio_moneda import normalizar_moneda
+
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
 OUT = ROOT / "outputs" / "comparativos"
@@ -32,6 +34,9 @@ def prepare(frame: pd.DataFrame) -> pd.DataFrame:
     frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
     frame["superficie_m2"] = pd.to_numeric(frame["superficie_m2"], errors="coerce") if "superficie_m2" in frame else np.nan
+    frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
+    if "precio_sospechoso" in frame:
+        frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
     frame["canal_normalizado"] = frame["canal"].fillna("desconocido").astype(str).str.lower()
 
     def canal(row):
@@ -56,7 +61,7 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
             "banos_pct": round(100 * g["banos"].notna().mean(), 1),
             "m2_pct": round(100 * g["superficie_m2"].notna().mean(), 1),
             "precio_pct": round(100 * g["precio_original"].notna().mean(), 1),
-            "moneda_pct": round(100 * g["moneda"].notna().mean(), 1),
+            "moneda_pct": round(100 * g["moneda"].ne("").mean(), 1),
             "fecha_pct": round(100 * g["fecha_publicacion"].notna().mean(), 1),
         })
     return pd.DataFrame(rows)
@@ -64,9 +69,16 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
 
 def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for canal, g in frame.groupby("canal_grafico"):
+    usable = frame[
+        frame["precio_original"].notna()
+        & frame["moneda"].ne("")
+    ]
+    if "precio_sospechoso" in usable:
+        usable = usable[~usable["precio_sospechoso"]]
+    for (canal, currency), g in usable.groupby(["canal_grafico", "moneda"]):
         rows.append({
             "canal": canal,
+            "moneda": currency,
             "anuncios": len(g),
             "anuncios_con_precio": int(g["precio_original"].notna().sum()),
             "mediana_precio": g["precio_original"].median(),
@@ -85,34 +97,50 @@ def plot_coverage(summary: pd.DataFrame):
     sns.barplot(data=long, x="variable", y="cobertura_pct", hue="fuente", ax=ax)
     ax.set_ylabel("Cobertura (%)")
     ax.set_title("Cobertura de metadatos por fuente")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=25, ha="right")
+    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
     plt.tight_layout()
     fig.savefig(OUT / "01_cobertura_por_fuente.png", dpi=140, facecolor="white")
     plt.close(fig)
 
 
 def plot_channel_price(frame: pd.DataFrame):
-    valid = frame[frame["precio_original"].notna()].copy()
+    valid = frame[frame["precio_original"].notna() & frame["moneda"].ne("")].copy()
     valid = valid[~valid["precio_sospechoso"].fillna(False).astype(bool)] if "precio_sospechoso" in valid else valid
     if valid.empty:
         return
-    fig, ax = plt.subplots(figsize=(9, 5))
-    sns.boxplot(data=valid, x="canal_grafico", y="precio_original", hue="fuente", ax=ax, showfliers=False)
-    ax.set_title("Precio original por canal")
-    ax.set_ylabel("Precio (moneda original)")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=12, ha="right")
-    plt.tight_layout()
-    fig.savefig(OUT / "02_precio_por_canal.png", dpi=140, facecolor="white")
-    plt.close(fig)
+    graph = sns.catplot(
+        data=valid,
+        x="canal_grafico",
+        y="precio_original",
+        hue="fuente",
+        col="moneda",
+        kind="box",
+        showfliers=False,
+        height=5,
+        aspect=1.15,
+    )
+    graph.set_axis_labels("Canal", "Precio original")
+    graph.set_titles("Moneda: {col_name}")
+    graph.set_xticklabels(rotation=12, ha="right")
+    graph.fig.suptitle("Precio original por canal, separado por moneda", y=1.02)
+    graph.fig.savefig(OUT / "02_precio_por_canal.png", dpi=140, facecolor="white")
+    plt.close(graph.fig)
 
 
-def plot_channel_m2(channel: pd.DataFrame):
+def plot_channel_m2(frame: pd.DataFrame):
+    channel = frame.groupby("canal_grafico").agg(
+        con_m2_pct=("superficie_m2", lambda s: round(100 * s.notna().mean(), 1))
+    ).reset_index()
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    bars = ax.bar(channel["canal"], channel["con_m2_pct"], color=["#4472c4", "#70ad47", "#ffc759"][:len(channel)])
+    bars = ax.bar(
+        channel["canal_grafico"],
+        channel["con_m2_pct"],
+        color=["#4472c4", "#70ad47", "#ffc759"][:len(channel)],
+    )
     ax.bar_label(bars, labels=[f"{v:.1f}%" for v in channel["con_m2_pct"]], padding=2)
     ax.set_title("Cobertura de superficie (m²) por canal")
     ax.set_ylabel("% de anuncios con m²")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=12, ha="right")
+    plt.setp(ax.get_xticklabels(), rotation=12, ha="right")
     plt.tight_layout()
     fig.savefig(OUT / "03_cobertura_m2_por_canal.png", dpi=140, facecolor="white")
     plt.close(fig)
@@ -143,7 +171,7 @@ def main():
 
     plot_coverage(sources)
     plot_channel_price(frame)
-    plot_channel_m2(channels)
+    plot_channel_m2(frame)
     plot_currency_percentage(frame)
 
     # print top-line answers
