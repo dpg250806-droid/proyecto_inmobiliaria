@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 
+from precio_moneda import precios_analisis
+
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
 CONV_DIR = ROOT / "outputs" / "conversiones"
@@ -25,14 +27,18 @@ def clean_boolean(series: pd.Series) -> pd.Series:
 
 def rank_associations(frame: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for (source, currency), group in frame.groupby(["fuente", "moneda"]):
+    frame = frame.copy()
+    if "precio_analisis" not in frame.columns or "moneda_analisis" not in frame.columns:
+        # Frames de prueba o maestros antiguos: derivar el precio de analisis aqui.
+        frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
+    for (source, currency), group in frame.groupby(["fuente", "moneda_analisis"]):
         for field in ("habitaciones", "banos", "superficie_m2"):
             if field not in group:
                 continue
-            pair = group[["precio_original", field]].dropna()
-            if len(pair) < 5 or pair[field].nunique() < 2 or pair["precio_original"].nunique() < 2:
+            pair = group[["precio_analisis", field]].dropna()
+            if len(pair) < 5 or pair[field].nunique() < 2 or pair["precio_analisis"].nunique() < 2:
                 continue
-            coefficient = pair["precio_original"].rank().corr(pair[field].rank())
+            coefficient = pair["precio_analisis"].rank().corr(pair[field].rank())
             rows.append({
                 "fuente": source,
                 "moneda": currency,
@@ -56,13 +62,15 @@ def main():
     master["superficie_m2"] = pd.to_numeric(master["superficie_m2"], errors="coerce")
     master["moneda"] = master["moneda"].fillna("").astype(str).str.strip().str.upper().replace("", "SIN_MONEDA")
     master["precio_sospechoso"] = clean_boolean(master["precio_sospechoso"])
+    # Precio de analisis: prefiere la reextraccion manual y excluye campos sospechosos.
+    master["precio_analisis"], master["moneda_analisis"] = precios_analisis(master)
+    master["moneda_analisis"] = master["moneda_analisis"].replace("", "SIN_MONEDA")
     conversion["precio_usd_informal"] = pd.to_numeric(conversion["precio_usd_informal"], errors="coerce")
     conversion["precio_usd_formal"] = pd.to_numeric(conversion["precio_usd_formal"], errors="coerce")
     conversion["moneda"] = conversion["moneda"].fillna("").astype(str).str.strip().str.upper().replace("", "SIN_MONEDA")
     price_data = master[
-        master["precio_original"].notna()
-        & master["moneda"].ne("SIN_MONEDA")
-        & ~master["precio_sospechoso"]
+        master["precio_analisis"].notna()
+        & master["moneda_analisis"].ne("SIN_MONEDA")
     ].copy()
 
     lines = []
@@ -70,7 +78,7 @@ def main():
     lines.append("")
     lines.append(f"Dataset maestro: `{master_path.name}`")
     lines.append(f"Conversiones: `{conversion_path.name}`")
-    lines.append(f"Filas en maestro: {len(master)}; precios utilizables (moneda conocida, no sospechosos): {len(price_data)}.")
+    lines.append(f"Filas en maestro: {len(master)}; precios utilizables (mejor precio disponible con moneda): {len(price_data)}.")
     lines.append("")
     lines.append("## Evidencia y alcance de la muestra")
     lines.append("")
@@ -84,27 +92,29 @@ def main():
     ).reset_index()
     lines.append(coverage.to_markdown(index=False))
     lines.append("")
-    lines.append("Distribucion de precios con moneda registrada:")
+    lines.append("Distribucion de anuncios por moneda publicada en el campo de precio:")
     lines.append("")
     currency_counts = master.groupby(["fuente", "moneda"], dropna=False).size().rename("anuncios").reset_index()
     lines.append(currency_counts.to_markdown(index=False))
     lines.append("")
     lines.append(
         "La unidad observada es un anuncio, no una transaccion cerrada. Los precios sospechosos, "
-        "sin moneda o sin importe se excluyen de estadisticas de precios; no se imputan."
+        "sin moneda o sin importe se excluyen de estadisticas de precios; no se imputan. "
+        "Donde la revision manual verifico un precio en la descripcion o en el titulo, ese valor "
+        "se usa como `precio_analisis` y el campo publicado se conserva sin corregir."
     )
     lines.append("")
 
     lines.append("## 1. Precio central por fuente y moneda")
-    stats = price_data.groupby(["fuente", "moneda"])["precio_original"].agg(["count", "median", "mean", "min", "max"]).reset_index()
+    stats = price_data.groupby(["fuente", "moneda_analisis"])["precio_analisis"].agg(["count", "median", "mean", "min", "max"]).reset_index()
     lines.append(stats.to_markdown(index=False))
     lines.append("")
 
     lines.append("## 2. Precio por municipio/zona (top 10 por moneda, cobertura suficiente)")
     muni = price_data[price_data["ubicacion_raw"].notna()]
-    muni = muni.groupby(["fuente", "moneda", "ubicacion_raw"]).agg(anuncios=("precio_original", "count"), mediana=("precio_original", "median")).reset_index()
+    muni = muni.groupby(["fuente", "moneda_analisis", "ubicacion_raw"]).agg(anuncios=("precio_analisis", "count"), mediana=("precio_analisis", "median")).reset_index()
     muni = muni[muni["anuncios"] >= 5]
-    muni = muni.sort_values(["moneda", "mediana"], ascending=[True, False]).groupby("moneda", group_keys=False).head(10)
+    muni = muni.sort_values(["moneda_analisis", "mediana"], ascending=[True, False]).groupby("moneda_analisis", group_keys=False).head(10)
     lines.append(muni.to_markdown(index=False) if not muni.empty else "Sin suficentes datos.")
     lines.append("")
 
@@ -116,19 +126,19 @@ def main():
     else:
         lines.append("No hay pares completos suficientes para estimar asociaciones.")
     lines.append("")
-    hab = price_data[price_data["habitaciones"].notna()].groupby(["fuente", "moneda", "habitaciones"])["precio_original"].agg(["count", "median"]).reset_index()
+    hab = price_data[price_data["habitaciones"].notna()].groupby(["fuente", "moneda_analisis", "habitaciones"])["precio_analisis"].agg(["count", "median"]).reset_index()
     lines.append("Medianas observadas por cantidad de habitaciones:")
     lines.append(hab.to_markdown(index=False) if not hab.empty else "Sin pares completos.")
     lines.append("")
-    baths = price_data[price_data["banos"].notna()].groupby(["fuente", "moneda", "banos"])["precio_original"].agg(["count", "median"]).reset_index()
+    baths = price_data[price_data["banos"].notna()].groupby(["fuente", "moneda_analisis", "banos"])["precio_analisis"].agg(["count", "median"]).reset_index()
     lines.append("Medianas observadas por cantidad de banos:")
     lines.append(baths.to_markdown(index=False) if not baths.empty else "Sin pares completos.")
     lines.append("")
 
-    lines.append("## 4. CaracterÃ­sticas mÃ¡s frecuentes en viviendas caras")
+    lines.append("## 4. Características más frecuentes en viviendas caras")
     cub = price_data[price_data["fuente"] == "Cubisima"]
-    for currency, currency_rows in cub.groupby("moneda"):
-        high = currency_rows[currency_rows["precio_original"] >= currency_rows["precio_original"].median()]
+    for currency, currency_rows in cub.groupby("moneda_analisis"):
+        high = currency_rows[currency_rows["precio_analisis"] >= currency_rows["precio_analisis"].median()]
         lines.append(f"Moneda **{currency}**: {len(high)} anuncios en o sobre la mediana de esa moneda.")
         for feature in ["garaje", "piscina", "terraza", "patio", "balcon", "jardin"]:
             if feature in high.columns:
@@ -146,16 +156,16 @@ def main():
             return "Estructurado - Cubisima"
         return "Estructurado - HogarEnCuba"
     master["canal"] = master.apply(canal, axis=1)
-    by_channel = price_data.groupby(["canal", "moneda"]).agg(
-        anuncios=("precio_original", "count"),
-        mediana_precio=("precio_original", "median"),
+    by_channel = price_data.groupby(["canal", "moneda_analisis"]).agg(
+        anuncios=("precio_analisis", "count"),
+        mediana_precio=("precio_analisis", "median"),
         metricas_m2=("superficie_m2", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
         fecha_pct=("fecha_publicacion", lambda s: round(100 * pd.notna(s).mean(), 1)),
     ).reset_index()
     lines.append(by_channel.to_markdown(index=False))
     lines.append("")
     common_currency = (
-        price_data.groupby("moneda")["fuente"].nunique().loc[lambda values: values > 1].index.tolist()
+        price_data.groupby("moneda_analisis")["fuente"].nunique().loc[lambda values: values > 1].index.tolist()
     )
     lines.append(
         "Monedas observadas en mas de una fuente: "
@@ -172,8 +182,8 @@ def main():
         and conversion["dataset_maestro_origen"].iloc[0] == master_path.name
     )
     if conversion_matches_master:
-        conv_stats = conversion.groupby(["fuente", "moneda"]).agg(
-            anuncios=("precio_original", "count"),
+        conv_stats = conversion.groupby(["fuente", "moneda_analisis"]).agg(
+            anuncios=("precio_analisis", "count"),
             convertidos=("precio_usd_informal", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
             mediana_usd_informal=("precio_usd_informal", "median"),
             mediana_usd_formal=("precio_usd_formal", "median"),
@@ -198,13 +208,15 @@ def main():
         latest_cluster = cluster_files[-1]
         clusters = pd.read_csv(latest_cluster)
         grupos = clusters["cluster"].nunique()
+        moneda_col = "moneda_analisis" if "moneda_analisis" in clusters else "moneda"
         detalle = "; ".join(
             f"{moneda}: {len(rows)} anuncios de {', '.join(sorted(rows['fuente'].unique()))}"
-            for moneda, rows in clusters.groupby("moneda")
+            for moneda, rows in clusters.groupby(moneda_col)
         )
         lines.append(
             "El script `clustering_viviendas.py` aplica k-means (k=3) por separado a cada moneda "
-            "con al menos 30 observaciones, sobre precio, habitaciones y banos y sin precios sospechosos. "
+            "con al menos 30 observaciones, sobre el precio de analisis (que prefiere la reextraccion "
+            "manual y excluye precios sospechosos), habitaciones y banos. "
             f"Resultado vigente: `{latest_cluster.name}` con {grupos} grupos por moneda ({detalle}). "
             "Los centros estan en `centroides_clusters_*.csv`. "
             "Revolico queda fuera por no tener banos y EUR por tener pocas observaciones."

@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda
+from precio_moneda import normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -35,15 +35,13 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
     frame["superficie_m2"] = pd.to_numeric(frame["superficie_m2"], errors="coerce") if "superficie_m2" in frame else pd.NA
     frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
-    if "precio_sospechoso" in frame:
-        sospechoso = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
-    else:
-        sospechoso = pd.Series(False, index=frame.index)
+    # El precio de analisis prefiere la reextraccion manual y excluye los campos
+    # sospechosos; `precio_original` queda disponible para auditoria.
+    frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
     frame = frame[
-        frame["precio_original"].notna()
+        frame["precio_analisis"].notna()
         & frame["habitaciones"].notna()
-        & frame["moneda"].ne("")
-        & ~sospechoso
+        & frame["moneda_analisis"].ne("")
     ].copy()
     if frame.empty:
         return frame
@@ -60,7 +58,7 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
             return "mediana (3-4)"
         return "amplia (5+)"
 
-    frame["grupo_precio"] = frame.groupby("moneda", group_keys=False)["precio_original"].apply(price_groups)
+    frame["grupo_precio"] = frame.groupby("moneda_analisis", group_keys=False)["precio_analisis"].apply(price_groups)
     frame["perfil_habitaciones"] = frame["habitaciones"].apply(room_profile)
     frame["con_banos"] = frame["banos"].notna()
     frame["con_m2"] = frame["superficie_m2"].notna()
@@ -68,9 +66,9 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
-    table = frame.groupby(["moneda", "grupo_precio", "perfil_habitaciones"]).agg(
-        anuncios=("precio_original", "count"),
-        precio_mediano=("precio_original", "median"),
+    table = frame.groupby(["moneda_analisis", "grupo_precio", "perfil_habitaciones"]).agg(
+        anuncios=("precio_analisis", "count"),
+        precio_mediano=("precio_analisis", "median"),
         habitaciones_mediana=("habitaciones", "median"),
         banos_mediana=("banos", "median"),
         con_m2=("con_m2", "sum"),
@@ -82,9 +80,9 @@ def plot_segment(frame: pd.DataFrame, out: Path):
     graph = sns.relplot(
         data=frame,
         x="habitaciones",
-        y="precio_original",
+        y="precio_analisis",
         hue="grupo_precio",
-        col="moneda",
+        col="moneda_analisis",
         col_wrap=2,
         kind="scatter",
         alpha=0.55,
@@ -92,7 +90,7 @@ def plot_segment(frame: pd.DataFrame, out: Path):
         aspect=1.2,
         palette={"economica": "#9bb7d4", "media": "#4472c4", "alta": "#1f3864"},
     )
-    graph.set_axis_labels("Habitaciones", "Precio original")
+    graph.set_axis_labels("Habitaciones", "Precio de analisis")
     graph.set_titles("Moneda: {col_name}")
     graph.fig.suptitle("Perfil por precio y habitaciones (precios separados por moneda)", y=1.02)
     graph.fig.savefig(out / "segmentos_precio_habitaciones.png", dpi=140, facecolor="white")
@@ -100,10 +98,10 @@ def plot_segment(frame: pd.DataFrame, out: Path):
 
 
 def plot_source_segment(frame: pd.DataFrame, out: Path):
-    currencies = sorted(frame["moneda"].dropna().unique())
+    currencies = sorted(frame["moneda_analisis"].dropna().unique())
     fig, axes = plt.subplots(1, len(currencies), figsize=(7 * len(currencies), 5), squeeze=False)
     for ax, currency in zip(axes[0], currencies):
-        table = frame.loc[frame["moneda"].eq(currency)].groupby(["fuente", "grupo_precio"]).size().unstack(fill_value=0)
+        table = frame.loc[frame["moneda_analisis"].eq(currency)].groupby(["fuente", "grupo_precio"]).size().unstack(fill_value=0)
         counts = table.div(table.sum(axis=1), axis=0).fillna(0) * 100
         counts.plot(kind="bar", stacked=True, ax=ax, colormap="Blues")
         ax.set_title(f"Moneda: {currency}")

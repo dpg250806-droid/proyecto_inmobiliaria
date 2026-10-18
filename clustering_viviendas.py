@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda
+from precio_moneda import normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -56,18 +56,16 @@ def main():
     frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
     frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
-    if "precio_sospechoso" in frame:
-        suspicious = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
-    else:
-        suspicious = pd.Series(False, index=frame.index)
+    # El precio de analisis prefiere la reextraccion manual y excluye los campos
+    # sospechosos; `precio_original` queda disponible para auditoria.
+    frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
     data = frame[
-        frame["precio_original"].notna()
+        frame["precio_analisis"].notna()
         & frame["habitaciones"].notna()
         & frame["banos"].notna()
-        & frame["moneda"].ne("")
-        & ~suspicious
+        & frame["moneda_analisis"].ne("")
     ].copy()
-    counts = data["moneda"].value_counts()
+    counts = data["moneda_analisis"].value_counts()
     usable_currencies = counts[counts >= 30].index
     excluidas = counts[counts < 30]
     if not excluidas.empty:
@@ -75,15 +73,15 @@ def main():
             "Monedas excluidas (menos de 30 observaciones): "
             + ", ".join(f"{m}: {n}" for m, n in excluidas.items())
         )
-    data = data[data["moneda"].isin(usable_currencies)].copy()
+    data = data[data["moneda_analisis"].isin(usable_currencies)].copy()
     if data.empty:
         print("No hay suficientes datos completos para clustering.")
         return
 
     data["cluster"] = -1
     center_rows = []
-    for currency, currency_rows in data.groupby("moneda"):
-        x = currency_rows[["precio_original", "habitaciones", "banos"]].to_numpy(dtype=float)
+    for currency, currency_rows in data.groupby("moneda_analisis"):
+        x = currency_rows[["precio_analisis", "habitaciones", "banos"]].to_numpy(dtype=float)
         means = x.mean(axis=0)
         scales = x.std(axis=0)
         scales[scales == 0] = 1
@@ -104,9 +102,9 @@ def main():
     data.to_csv(OUT / f"clusters_viviendas_{stamp}.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(center_rows).to_csv(OUT / f"centroides_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
 
-    profile = data.groupby(["moneda", "cluster"]).agg(
-        anuncios=("precio_original", "count"),
-        precio_mediano=("precio_original", "median"),
+    profile = data.groupby(["moneda_analisis", "cluster"]).agg(
+        anuncios=("precio_analisis", "count"),
+        precio_mediano=("precio_analisis", "median"),
         habitaciones_mediana=("habitaciones", "median"),
         banos_mediana=("banos", "median"),
     ).reset_index()
@@ -115,14 +113,14 @@ def main():
     graph = sns.relplot(
         data=data,
         x="habitaciones",
-        y="precio_original",
+        y="precio_analisis",
         hue="cluster",
-        col="moneda",
+        col="moneda_analisis",
         col_wrap=2,
         kind="scatter",
         palette="deep",
     )
-    graph.set_axis_labels("Habitaciones", "Precio original")
+    graph.set_axis_labels("Habitaciones", "Precio de analisis")
     graph.set_titles("Moneda: {col_name}")
     graph.fig.suptitle("Clustering de viviendas (k-means por moneda)", y=1.02)
     graph.fig.savefig(OUT / "clusters_viviendas.png", dpi=140, facecolor="white")

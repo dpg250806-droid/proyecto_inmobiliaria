@@ -14,7 +14,7 @@ from integrar_fuentes import aplicar_veredictos_revision
 from convertir_precios_tasas import convertir, latest_rate_file
 from integrar_fuentes import hogarencuba_source_path
 from analisis_preguntas import rank_associations
-from precio_moneda import extraer_precio_moneda, normalizar_moneda, parsear_importe
+from precio_moneda import extraer_precio_moneda, normalizar_moneda, parsear_importe, precios_analisis
 from reprocesar_cubisima import reprocesar
 from reprocesar_hogarencuba import latest_source, revalidar
 from scraper_cubisima_online import (
@@ -341,6 +341,35 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         self.assertEqual(converted.loc[0, "fx_cuc_usd_nominal"], 1.0)
         self.assertTrue(pd.isna(converted.loc[0, "fx_cuc_informal_cup"]))
 
+    def test_conversion_usa_precio_reextraido_cuando_el_campo_es_sospechoso(self):
+        frame = pd.DataFrame([
+            {
+                "precio_original": 18,
+                "moneda": "CUC",
+                "precio_sospechoso": True,
+                "precio_reextraido": 18000,
+                "moneda_reextraida": "USD",
+                "fecha_publicacion": "2026-05-01",
+            },
+            {
+                "precio_original": 10,
+                "moneda": "USD",
+                "precio_sospechoso": True,
+                "precio_reextraido": np.nan,
+                "moneda_reextraida": "",
+                "fecha_publicacion": "2026-05-01",
+            },
+        ])
+        converted = convertir(frame, self.rates)
+        # Reextraccion verificada: se analiza el precio de la descripcion, no el campo.
+        self.assertEqual(converted.loc[0, "precio_analisis"], 18000)
+        self.assertEqual(converted.loc[0, "moneda_analisis"], "USD")
+        self.assertEqual(converted.loc[0, "precio_usd_informal"], 18000)
+        self.assertEqual(converted.loc[0, "conversion_estado_informal"], "convertido")
+        # Sospechoso sin reextraccion sigue excluido.
+        self.assertTrue(pd.isna(converted.loc[1, "precio_usd_informal"]))
+        self.assertEqual(converted.loc[1, "conversion_estado_informal"], "precio_sospechoso")
+
     def test_cuc_nominal_requires_post_2021_publication_date(self):
         frame = pd.DataFrame([
             {"precio_original": 100, "moneda": "CUC", "precio_sospechoso": False, "fecha_publicacion": "7/12/2019"},
@@ -425,6 +454,86 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
             resultado = aplicar_veredictos_revision(frame, ruta)
         self.assertFalse(bool(resultado.loc[0, "precio_sospechoso"]))
         self.assertIn("veredicto_revision", resultado.columns)
+
+    def test_reextraccion_manual_registra_precio_verificado_y_evidencia(self):
+        frame = pd.DataFrame(
+            [
+                {"url": "https://ejemplo/a", "precio_sospechoso": False},
+                {"url": "https://ejemplo/b", "precio_sospechoso": False},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            ruta = Path(folder) / "precios_bajos.csv"
+            pd.DataFrame(
+                [
+                    {
+                        "url": "https://ejemplo/a",
+                        "veredicto": "Error",
+                        "precio_en_descripcion": "18000",
+                        "moneda_en_descripcion": "USD",
+                        "observacion": "Descripcion cita 18 000 usd",
+                    },
+                    {
+                        "url": "https://ejemplo/b",
+                        "veredicto": "Error",
+                        "precio_en_descripcion": "",
+                        "moneda_en_descripcion": "",
+                        "observacion": "Sin precio verificable",
+                    },
+                ]
+            ).to_csv(ruta, index=False)
+            resultado = aplicar_veredictos_revision(frame, ruta)
+        # El campo publicado sigue marcado como erroneo; el precio verificado se
+        # registra en columnas aparte con su evidencia.
+        self.assertTrue(bool(resultado.loc[0, "precio_sospechoso"]))
+        self.assertEqual(float(resultado.loc[0, "precio_reextraido"]), 18000.0)
+        self.assertEqual(resultado.loc[0, "moneda_reextraida"], "USD")
+        self.assertIn("18 000 usd", resultado.loc[0, "evidencia_precio"])
+        # Sin precio verificado no hay reextraccion.
+        self.assertTrue(pd.isna(resultado.loc[1, "precio_reextraido"]))
+        self.assertEqual(str(resultado.loc[1, "moneda_reextraida"]).strip(), "")
+        precio, moneda = precios_analisis(resultado)
+        self.assertEqual(float(precio.loc[0]), 18000.0)
+        self.assertEqual(moneda.loc[0], "USD")
+        self.assertTrue(pd.isna(precio.loc[1]))
+
+    def test_precios_analisis_prefiere_reextraccion_y_excluye_sospechosos(self):
+        frame = pd.DataFrame(
+            [
+                {"precio_original": 18.0, "moneda": "CUC", "precio_sospechoso": True,
+                 "precio_reextraido": 18000.0, "moneda_reextraida": "USD"},
+                {"precio_original": 55000.0, "moneda": "USD", "precio_sospechoso": False,
+                 "precio_reextraido": np.nan, "moneda_reextraida": ""},
+                {"precio_original": 10.0, "moneda": "USD", "precio_sospechoso": True,
+                 "precio_reextraido": np.nan, "moneda_reextraida": ""},
+                {"precio_original": 20000.0, "moneda": "", "precio_sospechoso": False,
+                 "precio_reextraido": np.nan, "moneda_reextraida": ""},
+            ]
+        )
+        precio, moneda = precios_analisis(frame)
+        # Reextraccion verificada gana sobre el campo erroneo.
+        self.assertEqual(float(precio.loc[0]), 18000.0)
+        self.assertEqual(moneda.loc[0], "USD")
+        # Campo publicado usable.
+        self.assertEqual(float(precio.loc[1]), 55000.0)
+        self.assertEqual(moneda.loc[1], "USD")
+        # Sospechoso sin reextraccion y campo sin moneda no aportan precio de analisis.
+        self.assertTrue(pd.isna(precio.loc[2]))
+        self.assertEqual(moneda.loc[2], "")
+        self.assertTrue(pd.isna(precio.loc[3]))
+
+    def test_precios_analisis_funciona_con_maestros_sin_columnas_de_reextraccion(self):
+        frame = pd.DataFrame(
+            [
+                {"precio_original": 120.0, "moneda": "USD", "precio_sospechoso": False},
+                {"precio_original": 5.0, "moneda": "USD", "precio_sospechoso": True},
+            ]
+        )
+        precio, moneda = precios_analisis(frame)
+        self.assertEqual(float(precio.loc[0]), 120.0)
+        self.assertEqual(moneda.loc[0], "USD")
+        self.assertTrue(pd.isna(precio.loc[1]))
+        self.assertEqual(moneda.loc[1], "")
 
     def test_segments_are_calculated_separately_by_currency(self):
         frame = pd.DataFrame([

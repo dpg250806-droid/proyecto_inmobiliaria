@@ -106,7 +106,25 @@ El snapshot histórico `outputs/hogarencuba/viviendas_hogarencuba_revisada_20261
 
 El snapshot `outputs/hogarencuba/viviendas_hogarencuba_revalidada_20261017_232654.csv` conserva las 155 filas del origen y revalida en vivo 14 discrepancias; las otras 141 se conservan sin recaptura y tienen estado explícito `sin_discrepancia_en_evidencia_local`. El origen histórico permanece intacto. Después se completó una captura nueva en `outputs/hogarencuba/viviendas_hogarencuba_20261017_234325.csv`: 188 URLs únicas, 10 de 10 páginas y 0 fichas fallidas. Los precios llevan `precio_metodo_extraccion` y `precio_evidencia`; los 14 IDs discrepantes anteriores aparecen con el parser actual. HEC2258 se registra como EUR por la etiqueta expresa `PRECIO EN EUR`; los otros 13 casos de ese grupo tienen moneda USD del JSON-LD asociado al ID exacto.
 
-El maestro local más reciente es `outputs/integracion/dataset_maestro_20261017_234629.csv`, con 1.566 filas: 780 Revolico, 598 Cubisima y 188 HogarEnCuba. El CSV original de Cubisima y los maestros anteriores continúan sin modificaciones. El análisis preliminar basado en ese maestro está en `outputs/preguntas/preguntas_resueltas_20261017_234644.md`; no es el informe final, pendiente de las entrevistas.
+El maestro local más reciente es `outputs/integracion/dataset_maestro_20261018_151710.csv`, con 1.566 filas: 780 Revolico, 598 Cubisima y 188 HogarEnCuba. El CSV original de Cubisima y los maestros anteriores continúan sin modificaciones. El análisis preliminar basado en ese maestro está en `outputs/preguntas/preguntas_resueltas_20261018_154323.md`; no es el informe final, pendiente de las entrevistas.
+
+### Columnas de precio y revisión del maestro
+
+El maestro distingue el campo publicado del precio que se analiza; nada se corrige ni se borra:
+
+| Columna | Tipo | Contenido y uso |
+|:---------|:-----|:----------------|
+| `precio_original`, `moneda` | numerico / categorica | Campo publicado por la fuente. Se conserva sin corregir y mide la cobertura de cada canal. |
+| `precio_sospechoso` | booleano | Marca importes que no deben analizarse tal cual: moneda contradicha por la fuente, importe 1, veredicto manual excluyente, etc. 160 marcas en la base vigente. |
+| `veredicto_revision` | categorica | Veredicto de la revisión manual de precios bajos: `error`, `producto`, `permuta`, `despublicado`, `no_verificable`, `otro`. Vacío si el anuncio no fue revisado. |
+| `precio_reextraido` | numerico | Precio verificado en la descripción o el título del anuncio durante la revisión manual (12 anuncios). Vacío cuando no hay precio verificable. |
+| `moneda_reextraida` | categorica | Moneda declarada en esa misma evidencia. |
+| `evidencia_precio` | texto | Cita literal de la evidencia usada en la reextracción; permite reabrir cada caso. |
+| `precio_analisis` | numerico | Precio que usan conversión, comparativo, segmentación, clustering y preguntas. Reglas: reextracción verificada primero; después el campo publicado si no está marcado como sospechoso y tiene moneda; si no, vacío (no se imputa). |
+| `moneda_analisis` | categorica | Moneda asociada a `precio_analisis`. |
+| `origen_precio` | categorica | `reextraccion_manual` (12), `campo_publicado` (1406) o `excluido` (148). |
+
+La función `precios_analisis()` de `precio_moneda.py` implementa estas reglas en un solo sitio y también funciona con maestros antiguos que no tienen las columnas nuevas. Los scripts derivados regeneran sus salidas con fecha y hora propias; los resultados antiguos no se sobrescriben.
 
 ## Tasas y equivalencias
 

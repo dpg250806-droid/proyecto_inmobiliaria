@@ -8,6 +8,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from precio_moneda import precios_analisis
+
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
 RATE_DIR = ROOT / "data" / "tasas"
@@ -110,12 +112,17 @@ def convertir(
     fecha = str(r.get("fecha_utc", "sin_fecha"))
 
     def usd_price(row, fx_usd, fx_eur, fx_cuc):
-        price = to_float(row.get("precio_original", None))
-        moneda = normalizar_moneda(row.get("moneda", None))
+        # `precio_analisis` ya excluye los campos sospechosos y prefiere la
+        # reextraccion manual de la revision de precios bajos.
+        price = to_float(row.get("precio_analisis", None))
+        moneda = normalizar_moneda(row.get("moneda_analisis", None))
         if price is None:
+            if to_float(row.get("precio_original", None)) is not None and bool(row.get("precio_sospechoso", False)):
+                return None, "precio_sospechoso"
+            # Precio publicado usable pero sin moneda: el motivo es la moneda.
+            if to_float(row.get("precio_original", None)) is not None:
+                return None, "moneda_no_identificada"
             return None, "precio_no_disponible"
-        if bool(row.get("precio_sospechoso", False)):
-            return None, "precio_sospechoso"
         if moneda == "USD":
             return price, "convertido"
         if moneda == "EUR":
@@ -140,6 +147,7 @@ def convertir(
         return None, "moneda_no_identificada" if not moneda else "moneda_no_soportada"
 
     frame = frame.copy()
+    frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
     frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
     informal = frame.apply(lambda row: usd_price(row, fx_usd_inf, fx_eur_inf, fx_cuc_inf), axis=1)
     formal = frame.apply(lambda row: usd_price(row, fx_usd_for, fx_eur_for, fx_cuc_for), axis=1)
@@ -157,7 +165,7 @@ def convertir(
     frame["fuente_tasa"] = r.get("fuente")
     frame["fuente_cuc_tasa"] = r.get("fuente_cuc")
     if cuc_usd_nominal:
-        cuc_rows = frame["moneda"].map(normalizar_moneda).eq("CUC")
+        cuc_rows = frame["moneda_analisis"].eq("CUC")
         frame["metodo_conversion_cuc"] = None
         frame.loc[cuc_rows, "metodo_conversion_cuc"] = METODO_CUC_NOMINAL
         frame["fx_cuc_usd_nominal"] = None
@@ -197,8 +205,8 @@ def main():
     with output.open("x", encoding="utf-8-sig", newline="") as handle:
         converted.to_csv(handle, index=False)
 
-    stats = converted.groupby(["fuente", "moneda"]).agg(
-        anuncios=("precio_original", "count"),
+    stats = converted.groupby(["fuente", "moneda_analisis"]).agg(
+        anuncios=("precio_analisis", "count"),
         convertidos_usd_informal=("precio_usd_informal", lambda s: pd.notna(s).sum()),
         mediana_usd_informal=("precio_usd_informal", "median"),
         mediana_usd_formal=("precio_usd_formal", "median"),

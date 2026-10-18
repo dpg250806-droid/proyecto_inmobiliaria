@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda
+from precio_moneda import normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_GLOB = "outputs/integracion/dataset_maestro_*.csv"
@@ -49,36 +49,36 @@ def save(fig, name: str):
 
 
 def plot_price_distribution(frame: pd.DataFrame):
+    # Precio de analisis: prefiere la reextraccion manual y excluye campos sospechosos.
     subset = frame[
-        frame["precio_original"].notna()
-        & frame["precio_original"].gt(0)
-        & frame["moneda"].astype(str).str.strip().ne("")
+        frame["precio_analisis"].notna()
+        & frame["precio_analisis"].gt(0)
+        & frame["moneda_analisis"].ne("")
     ].copy()
-    subset = subset[~subset["precio_sospechoso"].fillna(False).astype(bool)]
     if subset.empty:
         return None
     currencies = ["USD", "EUR", "CUC", "CUP"]
     fig, axes = plt.subplots(len(currencies), 1, figsize=(10, 8), sharex=False)
     any_plot = False
     for ax, currency in zip(axes, currencies):
-        data = subset[subset["moneda"].astype(str).str.upper().eq(currency)]
+        data = subset[subset["moneda_analisis"].str.upper().eq(currency)]
         if data.empty:
             ax.text(0.5, 0.5, f"Sin datos {currency}", ha="center", va="center", transform=ax.transAxes)
             ax.set_axis_off()
             continue
         any_plot = True
-        capq = data["precio_original"].quantile(0.98)
-        data = data[data["precio_original"].le(capq)]
+        capq = data["precio_analisis"].quantile(0.98)
+        data = data[data["precio_analisis"].le(capq)]
         sns.histplot(
             data=data,
-            x="precio_original",
+            x="precio_analisis",
             hue="fuente",
-            kde=data["precio_original"].nunique() > 1,
+            kde=data["precio_analisis"].nunique() > 1,
             ax=ax,
             element="step",
             stat="density",
         )
-        ax.set_title(f"Precio publicado ({currency}) por fuente")
+        ax.set_title(f"Precio de analisis ({currency}) por fuente")
         ax.set_xlabel(f"Precio ({currency})")
         ax.set_ylabel("Densidad")
     if not any_plot:
@@ -91,28 +91,27 @@ def plot_price_distribution(frame: pd.DataFrame):
 def plot_municipality_median(frame: pd.DataFrame):
     subset = frame[
         frame["ubicacion_raw"].notna()
-        & frame["precio_original"].notna()
-        & frame["moneda"].astype(str).str.strip().ne("")
+        & frame["precio_analisis"].notna()
+        & frame["moneda_analisis"].ne("")
     ].copy()
-    subset = subset[~subset["precio_sospechoso"].fillna(False).astype(bool)]
     if subset.empty:
         return None
     # Normalizar binario de municipio.
     subset["municipio_grafico"] = subset["ubicacion_raw"].astype(str).str.strip().str.title()
-    counts = subset.groupby(["moneda", "municipio_grafico"]).size()
+    counts = subset.groupby(["moneda_analisis", "municipio_grafico"]).size()
     usable = counts[counts.ge(10)].index
-    subset = subset.set_index(["moneda", "municipio_grafico"]).loc[lambda x: x.index.isin(usable)].reset_index()
+    subset = subset.set_index(["moneda_analisis", "municipio_grafico"]).loc[lambda x: x.index.isin(usable)].reset_index()
     if subset.empty:
         return None
-    med = subset.groupby(["moneda", "municipio_grafico"]).agg(
-        mediana=("precio_original", "median"),
-        n=("precio_original", "count"),
+    med = subset.groupby(["moneda_analisis", "municipio_grafico"]).agg(
+        mediana=("precio_analisis", "median"),
+        n=("precio_analisis", "count"),
     ).reset_index()
     graph = sns.catplot(
         data=med,
         x="mediana",
         y="municipio_grafico",
-        col="moneda",
+        col="moneda_analisis",
         col_wrap=2,
         kind="bar",
         sharex=False,
@@ -132,18 +131,17 @@ def plot_municipality_median(frame: pd.DataFrame):
 def plot_rooms_price(frame: pd.DataFrame):
     subset = frame[
         frame["habitaciones"].notna()
-        & frame["precio_original"].notna()
-        & frame["moneda"].astype(str).str.strip().ne("")
+        & frame["precio_analisis"].notna()
+        & frame["moneda_analisis"].ne("")
     ].copy()
-    subset = subset[~subset["precio_sospechoso"].fillna(False).astype(bool)]
     if subset.empty:
         return None
     subset["habitaciones"] = subset["habitaciones"].clip(1, 8).astype(int).astype(str)
     order = sorted(subset["habitaciones"].unique(), key=lambda x: int(x))
-    g = sns.catplot(data=subset, x="habitaciones", y="precio_original", hue="fuente",
-                    col="moneda", kind="box", height=4.8, aspect=1.05, order=order,
+    g = sns.catplot(data=subset, x="habitaciones", y="precio_analisis", hue="fuente",
+                    col="moneda_analisis", kind="box", height=4.8, aspect=1.05, order=order,
                     showfliers=False)
-    g.set_axis_labels("Habitaciones (agrupadas)", "Precio original")
+    g.set_axis_labels("Habitaciones (agrupadas)", "Precio de analisis")
     g.set_titles("{col_name}")
     path = save(g.figure, "03_habitaciones_precio_por_moneda.png")
     return path
@@ -275,17 +273,16 @@ def write_summary(frame: pd.DataFrame, paths: dict):
     lines.append("")
     lines.append("## Precio central por fuente y moneda")
     usable = frame[
-        frame["precio_original"].notna()
-        & frame["moneda"].ne("")
-        & ~frame["precio_sospechoso"].fillna(False).astype(bool)
+        frame["precio_analisis"].notna()
+        & frame["moneda_analisis"].ne("")
     ]
-    stats = usable.groupby(["fuente", "moneda"])["precio_original"].agg(["count", "median", "mean", "min", "max"]).reset_index()
+    stats = usable.groupby(["fuente", "moneda_analisis"])["precio_analisis"].agg(["count", "median", "mean", "min", "max"]).reset_index()
     lines.append(stats.to_markdown(index=False))
     lines.append("")
     lines.append("## Habitaciones vs precio en Cubisima")
     cub = usable[usable["fuente"].eq("Cubisima") & usable["habitaciones"].notna()]
     if not cub.empty:
-        hab_stats = cub.groupby(["moneda", "habitaciones"])["precio_original"].agg(["count", "median", "mean"]).round(2)
+        hab_stats = cub.groupby(["moneda_analisis", "habitaciones"])["precio_analisis"].agg(["count", "median", "mean"]).round(2)
         lines.append(hab_stats.to_markdown())
     else:
         lines.append("Sin datos suficientes.")
@@ -300,7 +297,7 @@ def write_summary(frame: pd.DataFrame, paths: dict):
             lines.append(f"- `{p.name}`")
     lines.append("")
     lines.append("## Nota metodológica")
-    lines.append("Los precios originales se resumen por fuente y moneda; los gráficos de precio separan monedas. No se comparan directamente importes de monedas distintas.")
+    lines.append("Los gráficos y las medianas usan `precio_analisis`/`moneda_analisis`: prefiere el precio verificado en la revisión manual de descripciones y excluye los campos marcados como sospechosos; el campo publicado se conserva sin corregir para auditoría. No se comparan directamente importes de monedas distintas.")
     path = OUT / "visualizaciones_resumen.md"
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
@@ -316,6 +313,8 @@ def main():
             frame[col] = pd.to_numeric(frame[col], errors="coerce")
     frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.lower().map({"true": True, "false": False, "1": True, "0": False})
     frame["fecha_descarga"] = pd.to_datetime(frame["fecha_descarga"], errors="coerce")
+    # Precio de analisis: reextraccion manual primero, campos sospechosos fuera.
+    frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
     frame = money_labels(frame)
 
     paths = {}

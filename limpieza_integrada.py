@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 
+from precio_moneda import precios_analisis
+
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
 OUT = ROOT / "outputs" / "limpieza_integrada"
@@ -36,6 +38,8 @@ def main():
 
     frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.lower().isin(["true", "1"])
     frame.loc[(frame["fuente"] == "Revolico") & (frame["moneda"] == "CUP"), "precio_sospechoso"] = True
+    # Recalcular el precio de analisis con la marca extra que aplica este script.
+    frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
     frame["canal_analisis"] = frame["fuente"].map({
         "Revolico": "clasificado_informal",
         "Cubisima": "plataforma_estructurada",
@@ -49,6 +53,7 @@ def main():
     summary = frame.groupby(["fuente", "canal_analisis"]).agg(
         anuncios=("precio_original", "size"),
         precio_valido=("precio_original", lambda s: pd.notna(s).sum()),
+        precio_analisis=("precio_analisis", lambda s: pd.notna(s).sum()),
         sospechosos=("precio_sospechoso", lambda s: int(s.sum())),
         banos=("banos", lambda s: pd.notna(s).sum()),
         m2=("superficie_m2", lambda s: pd.notna(s).sum()),

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pandas as pd
+
 
 _AMOUNT = r"(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
 _CURRENCY_PATTERNS = (
@@ -78,3 +80,51 @@ def extraer_precio_moneda(texto: str, url: str | None = None) -> tuple[float | N
 
     _, importe, moneda = min(coincidencias, key=lambda item: item[0])
     return importe, moneda
+
+
+def precios_analisis(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Devuelve (precio, moneda) de analisis para cada fila del maestro.
+
+    Reglas, en orden:
+    1. Si existe una reextraccion manual (`precio_reextraido` con `moneda_reextraida`),
+       se usa ese valor, que proviene de la descripcion o del titulo del anuncio.
+    2. Si no, se usa el campo publicado (`precio_original`/`moneda`) salvo que este
+       marcado como sospechoso.
+    3. Un precio sospechoso sin reextraccion queda como NaN y sin moneda de analisis.
+
+    Funciona tambien con maestros antiguos que no tienen las columnas de reextraccion.
+    La cobertura de la fuente debe seguir midiendo `precio_original`; estas series
+    miden el mejor precio disponible para analizar.
+    """
+    indice = frame.index
+    reextraido = (
+        pd.to_numeric(frame["precio_reextraido"], errors="coerce")
+        if "precio_reextraido" in frame
+        else pd.Series(float("nan"), index=indice)
+    )
+    moneda_reextraida = (
+        frame["moneda_reextraida"].fillna("").astype(str).str.strip().str.upper()
+        if "moneda_reextraida" in frame
+        else pd.Series("", index=indice)
+    )
+    moneda_reextraida = moneda_reextraida.map(lambda valor: normalizar_moneda(valor) or "")
+    campo = (
+        pd.to_numeric(frame["precio_original"], errors="coerce")
+        if "precio_original" in frame
+        else pd.Series(float("nan"), index=indice)
+    )
+    moneda_campo = (
+        frame["moneda"].fillna("").astype(str).map(lambda valor: normalizar_moneda(valor) or "")
+        if "moneda" in frame
+        else pd.Series("", index=indice)
+    )
+    sospechoso = (
+        frame["precio_sospechoso"].fillna(False).astype(str).str.strip().str.lower().isin({"true", "1", "yes", "si", "sí"})
+        if "precio_sospechoso" in frame
+        else pd.Series(False, index=indice)
+    )
+    usable_campo = campo.notna() & moneda_campo.ne("") & ~sospechoso
+    con_reextraccion = reextraido.notna() & moneda_reextraida.ne("")
+    precio = reextraido.where(con_reextraccion, campo.where(usable_campo))
+    moneda = moneda_reextraida.where(con_reextraccion, moneda_campo.where(usable_campo)).fillna("")
+    return precio, moneda

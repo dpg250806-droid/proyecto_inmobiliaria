@@ -15,6 +15,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from precio_moneda import precios_analisis
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 STANDARD_COLUMNS = [
@@ -276,16 +278,43 @@ def aplicar_veredictos_revision(
     """Aplica la revision manual de precios bajos sobre el maestro.
 
     Los anuncios con veredicto excluyente quedan marcados como `precio_sospechoso` y
-    conservan su veredicto en `veredicto_revision`. No se borra ni se corrige ningun
-    valor original: el precio observado en la descripcion se registra en el CSV de
-    revision, no en el maestro.
+    conservan su veredicto en `veredicto_revision`. Cuando la revision trajo un precio
+    verificado en la descripcion o en el titulo, se registra en `precio_reextraido` con
+    su moneda y su evidencia. No se borra ni se corrige ningun valor original: quien
+    decide que valor se analiza es `precio_analisis` (ver `precios_analisis`).
     """
     frame = frame.copy()
     frame["veredicto_revision"] = ""
+    frame["precio_reextraido"] = np.nan
+    frame["moneda_reextraida"] = ""
+    frame["evidencia_precio"] = ""
     if not ruta.exists():
         return frame
     revision = pd.read_csv(ruta, dtype=str).fillna("")
     revision["veredicto"] = revision["veredicto"].str.strip().str.lower()
+
+    # Reextraccion: si la revision registro un precio verificado en la descripcion o en
+    # el titulo del anuncio, se guarda como medida alternativa con su evidencia. El
+    # campo publicado no se corrige: `precio_analisis` decide que valor se analiza.
+    if "precio_en_descripcion" in revision:
+        revisados = revision.copy()
+        revisados["precio_verificado"] = pd.to_numeric(revisados["precio_en_descripcion"], errors="coerce")
+        if "moneda_en_descripcion" not in revisados:
+            revisados["moneda_en_descripcion"] = ""
+        revisados = revisados[revisados["precio_verificado"].notna() & revisados["url"].ne("")]
+        if not revisados.empty:
+            precios = dict(zip(revisados["url"], revisados["precio_verificado"]))
+            monedas = dict(zip(revisados["url"], revisados["moneda_en_descripcion"].str.upper()))
+            evidencias = dict(zip(revisados["url"], revisados["observacion"]))
+            con_precio = frame["url"].isin(precios)
+            frame.loc[con_precio, "precio_reextraido"] = frame.loc[con_precio, "url"].map(precios)
+            frame.loc[con_precio, "moneda_reextraida"] = frame.loc[con_precio, "url"].map(monedas)
+            frame.loc[con_precio, "evidencia_precio"] = frame.loc[con_precio, "url"].map(evidencias)
+            print(
+                f"Reextraccion manual de precio: {int(con_precio.sum())} anuncios con "
+                "precio verificado en la fuente"
+            )
+
     revision = revision[revision["veredicto"].isin(VEREDICTOS_EXCLUYENTES)]
     if revision.empty:
         return frame
@@ -326,11 +355,23 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         merged = merged.drop(columns=["_quality_key"])
 
     merged = aplicar_veredictos_revision(merged)
+    merged["precio_analisis"], merged["moneda_analisis"] = precios_analisis(merged)
+    merged["origen_precio"] = "excluido"
+    merged.loc[merged["precio_analisis"].notna(), "origen_precio"] = "campo_publicado"
+    merged.loc[merged["precio_reextraido"].notna(), "origen_precio"] = "reextraccion_manual"
     merged = merged.sort_values(["fuente", "id_local"], kind="stable").reset_index(drop=True)
     merged["id_maestro"] = [f"maestro_{i:06d}" for i in range(1, len(merged) + 1)]
-    # Poner id_maestro primero para facilitar futuras uniones; veredicto_revision
-    # se anade al final porque es una columna derivada de la revision manual.
-    columns = ["id_maestro"] + STANDARD_COLUMNS + ["veredicto_revision"]
+    # Poner id_maestro primero para facilitar futuras uniones; las columnas de revision
+    # y de precio de analisis se anaden al final porque son derivadas.
+    columns = ["id_maestro"] + STANDARD_COLUMNS + [
+        "veredicto_revision",
+        "precio_reextraido",
+        "moneda_reextraida",
+        "evidencia_precio",
+        "precio_analisis",
+        "moneda_analisis",
+        "origen_precio",
+    ]
     return merged[columns]
 
 

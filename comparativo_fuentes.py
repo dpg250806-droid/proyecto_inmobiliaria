@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda
+from precio_moneda import normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -37,6 +37,9 @@ def prepare(frame: pd.DataFrame) -> pd.DataFrame:
     frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
     if "precio_sospechoso" in frame:
         frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
+    # El precio de analisis prefiere la reextraccion manual y excluye los campos
+    # sospechosos; la cobertura (summary_table) sigue midiendo el campo publicado.
+    frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
     frame["canal_normalizado"] = frame["canal"].fillna("desconocido").astype(str).str.lower()
 
     def canal(row):
@@ -70,18 +73,16 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
 def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
     rows = []
     usable = frame[
-        frame["precio_original"].notna()
-        & frame["moneda"].ne("")
+        frame["precio_analisis"].notna()
+        & frame["moneda_analisis"].ne("")
     ]
-    if "precio_sospechoso" in usable:
-        usable = usable[~usable["precio_sospechoso"]]
-    for (canal, currency), g in usable.groupby(["canal_grafico", "moneda"]):
+    for (canal, currency), g in usable.groupby(["canal_grafico", "moneda_analisis"]):
         rows.append({
             "canal": canal,
             "moneda": currency,
             "anuncios": len(g),
-            "anuncios_con_precio": int(g["precio_original"].notna().sum()),
-            "mediana_precio": g["precio_original"].median(),
+            "anuncios_con_precio": int(g["precio_analisis"].notna().sum()),
+            "mediana_precio": g["precio_analisis"].median(),
             "con_banos_pct": round(100 * g["banos"].notna().mean(), 1),
             "con_m2_pct": round(100 * g["superficie_m2"].notna().mean(), 1),
             "con_fecha_pct": round(100 * g["fecha_publicacion"].notna().mean(), 1),
@@ -104,25 +105,24 @@ def plot_coverage(summary: pd.DataFrame):
 
 
 def plot_channel_price(frame: pd.DataFrame):
-    valid = frame[frame["precio_original"].notna() & frame["moneda"].ne("")].copy()
-    valid = valid[~valid["precio_sospechoso"].fillna(False).astype(bool)] if "precio_sospechoso" in valid else valid
+    valid = frame[frame["precio_analisis"].notna() & frame["moneda_analisis"].ne("")].copy()
     if valid.empty:
         return
     graph = sns.catplot(
         data=valid,
         x="canal_grafico",
-        y="precio_original",
+        y="precio_analisis",
         hue="fuente",
-        col="moneda",
+        col="moneda_analisis",
         kind="box",
         showfliers=False,
         height=5,
         aspect=1.15,
     )
-    graph.set_axis_labels("Canal", "Precio original")
+    graph.set_axis_labels("Canal", "Precio de analisis")
     graph.set_titles("Moneda: {col_name}")
     graph.set_xticklabels(rotation=12, ha="right")
-    graph.fig.suptitle("Precio original por canal, separado por moneda", y=1.02)
+    graph.fig.suptitle("Precio de analisis por canal, separado por moneda", y=1.02)
     graph.fig.savefig(OUT / "02_precio_por_canal.png", dpi=140, facecolor="white")
     plt.close(graph.fig)
 
