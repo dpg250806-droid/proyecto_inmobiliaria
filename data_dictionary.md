@@ -124,6 +124,21 @@ El maestro distingue el campo publicado del precio que se analiza; nada se corri
 | `moneda_analisis` | categorica | Moneda asociada a `precio_analisis`. |
 | `origen_precio` | categorica | `reextraccion_manual` (12), `campo_publicado` (1406) o `excluido` (148). |
 
+### Metadatos de la página del anuncio de Revolico
+
+La tarjeta del listado guardado (`paginas_revolico/`) solo contiene imagen, precio, título y enlace: **el municipio y la fecha no están en el HTML de listado**. Cuando existen, viven en la página individual del anuncio, dentro de `__NEXT_DATA__` → `props.pageProps.__APOLLO_STATE__`. `extraer_metadatos_revolico.py` consulta cada URL del maestro (con reintentos y espera) y guarda la evidencia en `outputs/metadatos_revolico/metadatos_revolico_<marca>.csv`; la extracción es reanudable con `--reanudar` y registra el estado de cada anuncio, incluidos los despublicados o borrados.
+
+| Columna | Tipo | Contenido y uso |
+|:---------|:-----|:----------------|
+| `municipio_reextraido` | texto | Municipio leído de la página del anuncio. Procedencia en `metodo_municipio`: `apollo` (campo estructurado `MunicipalityType:<id>`) o `texto_titulo_o_descripcion` (búsqueda por palabra entera en el texto, solo si coincide un único municipio; varias coincidencias se descartan). Vacío si la página no respondió o no hay municipio verificable. |
+| `metodo_municipio` | categorica | De dónde salió `municipio_reextraido`. |
+| `fecha_reextraida` | fecha ISO | `updatedOnByUser`, la fecha exacta que el sitio muestra como "hace X días". **Es la fecha de la última actualización del anuncio, no necesariamente la de creación.** No se mezcla con `fecha_publicacion` de las otras fuentes. |
+| `estado_anuncio` | categorica | `publicado`, `despublicado` o `anuncio_inexistente_<codigo>`. Registra la sesión de disponibilidad al momento de la consulta; no descarta el anuncio. |
+| `vendido` | booleano | `isSold` del anuncio. |
+| `evidencia_metadatos` | texto | Archivo de metadatos y URL de origen, para reabrir cada caso. |
+| `ubicacion_analisis` | texto | Ubicación que usan las medianas por municipio. Reglas: municipio verificado en la página primero; después `ubicacion_raw`; vacío si ambos faltan. No se imputa. |
+| `origen_ubicacion` | categorica | `pagina_anuncio`, `campo_publicado` o `sin_dato`. |
+
 La función `precios_analisis()` de `precio_moneda.py` implementa estas reglas en un solo sitio y también funciona con maestros antiguos que no tienen las columnas nuevas. Los scripts derivados regeneran sus salidas con fecha y hora propias; los resultados antiguos no se sobrescriben.
 
 ## Tasas y equivalencias

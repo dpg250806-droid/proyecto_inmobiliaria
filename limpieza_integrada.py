@@ -30,7 +30,11 @@ def normalizar_ubicacion(value):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     frame = pd.read_csv(newest(MASTER_DIR, "dataset_maestro_*.csv"), dtype=str)
-    frame["ubicacion_normalizada"] = frame["ubicacion_raw"].map(normalizar_ubicacion)
+    # `ubicacion_analisis` prefiere el municipio verificado en la pagina del anuncio.
+    ubicacion_base = (
+        frame["ubicacion_analisis"] if "ubicacion_analisis" in frame else frame["ubicacion_raw"]
+    ).replace("", pd.NA)
+    frame["ubicacion_normalizada"] = ubicacion_base.map(normalizar_ubicacion)
     frame["precio_original"] = pd.to_numeric(frame["precio_original"], errors="coerce")
     frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")

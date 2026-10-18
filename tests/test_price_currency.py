@@ -10,8 +10,9 @@ import pandas as pd
 
 from clustering_viviendas import kmeans
 from comparativo_fuentes import channel_summary, prepare, summary_table
-from integrar_fuentes import aplicar_veredictos_revision
+from integrar_fuentes import aplicar_metadatos_revolico, aplicar_veredictos_revision, parsear_fecha_exacta
 from convertir_precios_tasas import convertir, latest_rate_file
+from extraer_metadatos_revolico import buscar_municipio_en_texto, parsear_pagina_anuncio
 from integrar_fuentes import hogarencuba_source_path
 from analisis_preguntas import rank_associations
 from precio_moneda import extraer_precio_moneda, normalizar_moneda, parsear_importe, precios_analisis
@@ -589,6 +590,107 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
             ("Revolico", "USD"),
         })
         self.assertTrue(result["spearman_rho"].eq(1.0).all())
+
+
+class MetadatosRevolicoTests(unittest.TestCase):
+    """Metadatos de la pagina individual de anuncio: municipio, fecha y estado."""
+
+    def html_anuncio(self, estado="PUBLISHED", municipio="MunicipalityType:46", fecha="2026-10-06T15:09:36.500Z", descripcion="Apto en Nuevo Vedado"):
+        apollo = {
+            "AdType:57183888": {
+                "title": "Se renta apto 3 hab",
+                "description": descripcion,
+                "price": 300,
+                "currency": "USD",
+                "status": estado,
+                "updatedOnByUser": fecha,
+                "isSold": False,
+                "municipality": {"__ref": municipio} if municipio else None,
+                "province": {"__ref": "ProvinceType:1"},
+            },
+            "MunicipalityType:46": {"name": "Plaza"},
+            "ProvinceType:1": {"name": "La Habana"},
+        }
+        import json
+        datos = {"props": {"pageProps": {"__APOLLO_STATE__": apollo}}}
+        return f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(datos)}</script>'
+
+    def test_parsea_municipio_fecha_y_descripcion_desde_apollo(self):
+        resultado = parsear_pagina_anuncio(self.html_anuncio())
+        self.assertEqual(resultado["estado"], "publicado")
+        self.assertEqual(resultado["municipio"], "Plaza")
+        self.assertEqual(resultado["metodo_municipio"], "apollo")
+        self.assertEqual(resultado["provincia"], "La Habana")
+        self.assertEqual(resultado["fecha_updated_on"], "2026-10-06T15:09:36.500Z")
+        self.assertEqual(resultado["descripcion"], "Apto en Nuevo Vedado")
+        self.assertEqual(resultado["precio_pagina"], "300 USD")
+        self.assertFalse(bool(resultado["vendido"]))
+
+    def test_anuncio_despublicado_e_inexistente_quedan_registrados(self):
+        self.assertEqual(parsear_pagina_anuncio("<html>Anuncio despublicado</html>")["estado"], "despublicado")
+        datos = '{"props":{"pageProps":{"errorCode":"AD_NOT_FOUND"}}}'
+        self.assertEqual(
+            parsear_pagina_anuncio(f'<script id="__NEXT_DATA__">{datos}</script>')["estado"],
+            "anuncio_inexistente_AD_NOT_FOUND",
+        )
+
+    def test_sin_municipio_estructural_se_busca_en_el_texto(self):
+        html = self.html_anuncio(municipio=None, descripcion="Vendo casa en Marianao, buena ubicacion")
+        resultado = parsear_pagina_anuncio(html)
+        self.assertEqual(resultado["municipio"], "Marianao")
+        self.assertEqual(resultado["metodo_municipio"], "texto_titulo_o_descripcion")
+
+    def test_texto_ambiguo_no_adivina_el_municipio(self):
+        # Varias coincidencias en el texto no se resuelven a ciegas.
+        self.assertEqual(buscar_municipio_en_texto("Casa en Marianao cerca de Playa"), "")
+
+    def test_parsear_fecha_exacta_y_relativa(self):
+        self.assertEqual(parsear_fecha_exacta("2026-09-19T17:30:20.821Z"), "2026-09-19")
+        self.assertEqual(parsear_fecha_exacta("17/10/2023"), "2023-10-17")
+        self.assertIsNone(parsear_fecha_exacta("Actualizado: hace 2 anos"))
+        self.assertIsNone(parsear_fecha_exacta(""))
+
+    def test_aplicar_metadatos_anade_municipio_y_fecha_sin_tocar_lo_publicado(self):
+        frame = pd.DataFrame(
+            [
+                {"url": "https://revolico.com/item/a", "ubicacion_raw": ""},
+                {"url": "https://revolico.com/item/b", "ubicacion_raw": "Nuevo Vedado"},
+                {"url": "https://cubisima.com/item/c", "ubicacion_raw": "Playa"},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            ruta = Path(folder) / "metadatos_revolico_20261018_000000.csv"
+            pd.DataFrame(
+                [
+                    {"url": "https://revolico.com/item/a", "municipio": "Plaza", "metodo_municipio": "apollo",
+                     "fecha_updated_on": "2026-10-06T15:09:36.500Z", "estado": "publicado", "vendido": "False"},
+                    {"url": "https://revolico.com/item/b", "municipio": "", "metodo_municipio": "",
+                     "fecha_updated_on": "", "estado": "http_403", "vendido": ""},
+                ]
+            ).to_csv(ruta, index=False)
+            resultado = aplicar_metadatos_revolico(frame, ruta)
+        # Municipio y fecha de la pagina del anuncio quedan en columnas aparte.
+        self.assertEqual(resultado.loc[0, "municipio_reextraido"], "Plaza")
+        self.assertEqual(resultado.loc[0, "fecha_reextraida"], "2026-10-06T15:09:36.500Z")
+        self.assertEqual(resultado.loc[0, "estado_anuncio"], "publicado")
+        # El campo publicado no se corrige; la url sin metadatos queda vacia.
+        self.assertEqual(resultado.loc[1, "ubicacion_raw"], "Nuevo Vedado")
+        self.assertEqual(resultado.loc[1, "municipio_reextraido"], "")
+        self.assertEqual(resultado.loc[2, "municipio_reextraido"], "")
+
+    def test_ubicacion_analisis_prefiere_el_municipio_de_la_pagina(self):
+        from integrar_fuentes import ubicacion_analisis
+        frame = pd.DataFrame(
+            [
+                {"ubicacion_raw": "", "municipio_reextraido": "Plaza"},
+                {"ubicacion_raw": "Nuevo Vedado", "municipio_reextraido": "Plaza"},
+                {"ubicacion_raw": "Nuevo Vedado", "municipio_reextraido": ""},
+                {"ubicacion_raw": "", "municipio_reextraido": ""},
+            ]
+        )
+        ubicacion, origen = ubicacion_analisis(frame)
+        self.assertEqual(ubicacion.tolist(), ["Plaza", "Plaza", "Nuevo Vedado", ""])
+        self.assertEqual(origen.tolist(), ["pagina_anuncio", "pagina_anuncio", "campo_publicado", "sin_dato"])
 
 
 if __name__ == "__main__":

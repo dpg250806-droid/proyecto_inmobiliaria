@@ -86,9 +86,12 @@ def main():
         anuncios=("id_maestro", "count"),
         precio_disponible=("precio_original", "count"),
         ubicacion_disponible=("ubicacion_raw", "count"),
+        ubicacion_analisis=("ubicacion_analisis", lambda s: int(s.fillna("").astype(str).str.strip().ne("").sum())),
         habitaciones_disponibles=("habitaciones", "count"),
         banos_disponibles=("banos", "count"),
         superficie_disponible=("superficie_m2", "count"),
+        fecha_publicacion=("fecha_publicacion", "count"),
+        fecha_reextraida=("fecha_reextraida", lambda s: int(s.fillna("").astype(str).str.strip().ne("").sum())),
     ).reset_index()
     lines.append(coverage.to_markdown(index=False))
     lines.append("")
@@ -111,12 +114,35 @@ def main():
     lines.append("")
 
     lines.append("## 2. Precio por municipio/zona (top 10 por moneda, cobertura suficiente)")
-    muni = price_data[price_data["ubicacion_raw"].notna()]
-    muni = muni.groupby(["fuente", "moneda_analisis", "ubicacion_raw"]).agg(anuncios=("precio_analisis", "count"), mediana=("precio_analisis", "median")).reset_index()
+    muni = price_data[price_data["ubicacion_analisis"].fillna("").astype(str).str.strip().ne("")]
+    muni = muni.groupby(["fuente", "moneda_analisis", "ubicacion_analisis"]).agg(anuncios=("precio_analisis", "count"), mediana=("precio_analisis", "median")).reset_index()
     muni = muni[muni["anuncios"] >= 5]
     muni = muni.sort_values(["moneda_analisis", "mediana"], ascending=[True, False]).groupby("moneda_analisis", group_keys=False).head(10)
     lines.append(muni.to_markdown(index=False) if not muni.empty else "Sin suficentes datos.")
     lines.append("")
+
+    if "fecha_reextraida" in master.columns:
+        lines.append("### 2b. Frescura de los anuncios de Revolico")
+        fechas = master[
+            master["fuente"].eq("Revolico")
+            & master["fecha_reextraida"].fillna("").astype(str).str.strip().ne("")
+        ].copy()
+        if not fechas.empty:
+            fechas["mes_actualizacion"] = (
+                fechas["fecha_reextraida"].astype(str).str.slice(0, 7)
+            )
+            frescura = fechas.groupby("mes_actualizacion").agg(anuncios=("id_maestro", "count")).reset_index()
+            lines.append(
+                f"Los {len(fechas)} anuncios de Revolico con fecha de pagina (`updatedOnByUser`) van del "
+                f"{fechas['mes_actualizacion'].min()} al {fechas['mes_actualizacion'].max()}. "
+                "Es la fecha de la ultima actualizacion del anuncio, no la de creacion ni la de venta; "
+                "por tanto mide cuan frescos estan los anuncios, no cuando se cerraron operaciones."
+            )
+            lines.append("")
+            lines.append(frescura.tail(12).to_markdown(index=False))
+        else:
+            lines.append("Sin fechas de pagina de anuncio aplicadas al maestro actual.")
+        lines.append("")
 
     lines.append("## 3. Asociacion entre precio y caracteristicas")
     associations = rank_associations(price_data)
@@ -235,10 +261,30 @@ def main():
     lines.append("")
 
     lines.append("## 9. Limites del proyecto")
-    lines.append("- Municipio en Revolico: baja cobertura (37%).")
+    revolico = master[master["fuente"].eq("Revolico")]
+    if not revolico.empty:
+        total_revolico = len(revolico)
+        municipio_campo = int(revolico["ubicacion_raw"].fillna("").astype(str).str.strip().ne("").sum())
+        municipio_analisis = int(revolico["ubicacion_analisis"].fillna("").astype(str).str.strip().ne("").sum())
+        fecha_reextraida = int(revolico["fecha_reextraida"].fillna("").astype(str).str.strip().ne("").sum())
+        estado = revolico["estado_anuncio"].fillna("").astype(str).str.strip()
+        borrados = int(estado.str.startswith("anuncio_inexistente").sum() + estado.eq("despublicado").sum())
+        lines.append(
+            f"- Municipio en Revolico: el campo publicado lo cubre {municipio_campo} de {total_revolico} "
+            f"anuncios; la pagina del anuncio eleva la cobertura de analisis a {municipio_analisis}."
+        )
+        lines.append(
+            f"- Fecha en Revolico: el campo publicado no la tiene; la pagina del anuncio aporta "
+            f"`updatedOnByUser` en {fecha_reextraida} anuncios, que es fecha de actualizacion, no de creacion."
+        )
+        if borrados:
+            lines.append(
+                f"- Sesion de disponibilidad: {borrados} anuncios de Revolico ya no estan accesibles al "
+                "consultar la pagina (despublicados o borrados); no se descartan, pero no pueden verificarse."
+            )
+    lines.append("- Habitaciones y banos en Revolico: se extraen del titulo de la tarjeta; la pagina del anuncio no aporta campos estructurados de habitaciones, solo el texto de la descripcion.")
     lines.append("- m2 casi inexistente fuera de HogarEnCuba.")
-    lines.append("- Fecha de publicacion inexistente en Revolico.")
-    lines.append("- Revolico bloqueado para scraping automatico.")
+    lines.append("- El listado de Revolico esta bloqueado para scraping automatico; se usa HTML guardado.")
     lines.append("- Tasas online bloqueadas; se usa registro manual auditable.")
     lines.append("")
     lines.append("## 10. Linea narrativa de resultados (borrador, no informe final)")

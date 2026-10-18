@@ -329,6 +329,106 @@ def aplicar_veredictos_revision(
     return frame
 
 
+def parsear_fecha_exacta(valor: str):
+    """Devuelve la fecha YYYY-MM-DD si el valor es una fecha exacta, si no None.
+
+    Acepta ISO (`2026-09-19T17:30:20.821Z`) y `dd/mm/yyyy`; rechaza fechas
+    relativas ("Actualizado: hace 2 anos"), que no confirman un dia.
+    """
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    coincidencia = re.match(r"^(\d{4})-(\d{2})-(\d{2})", texto)
+    if coincidencia:
+        return coincidencia.group(0)
+    coincidencia = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", texto)
+    if coincidencia:
+        dia, mes, anio = coincidencia.groups()
+        return f"{anio}-{int(mes):02d}-{int(dia):02d}"
+    return None
+
+
+def aplicar_metadatos_revolico(
+    frame: pd.DataFrame, ruta: Path | None = None
+) -> pd.DataFrame:
+    """Anade municipio y fecha verificados en la pagina individual de Revolico.
+
+    La tarjeta del listado guardado no contiene municipio ni fecha: ambos viven en
+    la pagina del anuncio (`__APOLLO_STATE__`). `extraer_metadatos_revolico.py`
+    consulta cada URL y guarda la evidencia en `outputs/metadatos_revolico/`; aqui
+    se aplica el fichero mas reciente por URL.
+
+    Columnas nuevas: `municipio_reextraido` (campo estructurado o texto del
+    anuncio, con su metodo), `fecha_reextraida` (la `updatedOnByUser` que el sitio
+    muestra como "hace X dias"; es fecha de actualizacion, no de creacion),
+    `estado_anuncio`, `vendido` y `evidencia_metadatos`. No se corrige
+    `ubicacion_raw`: quien decide que valor se analiza es `ubicacion_analisis`.
+    """
+    frame = frame.copy()
+    frame["municipio_reextraido"] = ""
+    frame["metodo_municipio"] = ""
+    frame["fecha_reextraida"] = ""
+    frame["estado_anuncio"] = ""
+    frame["vendido"] = ""
+    frame["evidencia_metadatos"] = ""
+    if ruta is None:
+        candidatos = sorted((REPO_ROOT / "outputs" / "metadatos_revolico").glob("metadatos_revolico_*.csv"))
+        if not candidatos:
+            return frame
+        ruta = candidatos[-1]
+    if not ruta.exists():
+        return frame
+    metadatos = pd.read_csv(ruta, dtype=str).fillna("")
+    # Ultima consulta por URL gana, por si el archivo acumula reintentos.
+    metadatos = metadatos.drop_duplicates(subset=["url"], keep="last")
+    if metadatos.empty or "url" not in metadatos:
+        return frame
+    indices = frame.index[frame["url"].isin(set(metadatos["url"]))]
+    if indices.empty:
+        return frame
+    por_url = metadatos.set_index("url")
+    correspondencia = frame.loc[indices, "url"]
+    frame.loc[indices, "municipio_reextraido"] = correspondencia.map(por_url["municipio"])
+    frame.loc[indices, "metodo_municipio"] = correspondencia.map(por_url["metodo_municipio"])
+    frame.loc[indices, "fecha_reextraida"] = correspondencia.map(por_url["fecha_updated_on"])
+    frame.loc[indices, "estado_anuncio"] = correspondencia.map(por_url["estado"])
+    frame.loc[indices, "vendido"] = correspondencia.map(por_url["vendido"])
+    frame.loc[indices, "evidencia_metadatos"] = correspondencia.map(
+        lambda url: f"pagina_anuncio; consulta={ruta.stem}; url={url}"
+    )
+    print(
+        f"Metadatos de pagina de anuncio aplicados: {len(indices)} anuncios "
+        f"de Revolico (fuente: {ruta.relative_to(REPO_ROOT) if ruta.is_relative_to(REPO_ROOT) else ruta})"
+    )
+    return frame
+
+
+def ubicacion_analisis(frame: pd.DataFrame) -> tuple[pd.Series, str]:
+    """Devuelve (ubicacion de analisis, origen) para cada fila del maestro.
+
+    Reglas: el municipio verificado en la pagina del anuncio (`municipio_reextraido`)
+    tiene prioridad sobre el campo publicado (`ubicacion_raw`). Si ambos estan
+    vacios, la ubicacion de analisis queda vacia y el origen es `sin_dato`; no se
+    imputa ningun municipio.
+    """
+    indice = frame.index
+    reextraida = (
+        frame["municipio_reextraido"].fillna("").astype(str).str.strip()
+        if "municipio_reextraido" in frame
+        else pd.Series("", index=indice)
+    )
+    publicada = (
+        frame["ubicacion_raw"].fillna("").astype(str).str.strip()
+        if "ubicacion_raw" in frame
+        else pd.Series("", index=indice)
+    )
+    ubicacion = reextraida.where(reextraida.ne(""), publicada.where(publicada.ne(""))).fillna("")
+    origen = pd.Series("sin_dato", index=indice)
+    origen.loc[ubicacion.ne("")] = "campo_publicado"
+    origen.loc[reextraida.ne("")] = "pagina_anuncio"
+    return ubicacion, origen
+
+
 def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
     root = REPO_ROOT
     revolico_path = root / "anuncios_revolico_procesados.csv"
@@ -355,14 +455,18 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         merged = merged.drop(columns=["_quality_key"])
 
     merged = aplicar_veredictos_revision(merged)
+    merged = aplicar_metadatos_revolico(merged)
     merged["precio_analisis"], merged["moneda_analisis"] = precios_analisis(merged)
     merged["origen_precio"] = "excluido"
     merged.loc[merged["precio_analisis"].notna(), "origen_precio"] = "campo_publicado"
     merged.loc[merged["precio_reextraido"].notna(), "origen_precio"] = "reextraccion_manual"
+    # Ubicacion de analisis: municipio verificado en la pagina del anuncio primero,
+    # campo publicado despues; vacio en el resto. No se imputa.
+    merged["ubicacion_analisis"], merged["origen_ubicacion"] = ubicacion_analisis(merged)
     merged = merged.sort_values(["fuente", "id_local"], kind="stable").reset_index(drop=True)
     merged["id_maestro"] = [f"maestro_{i:06d}" for i in range(1, len(merged) + 1)]
-    # Poner id_maestro primero para facilitar futuras uniones; las columnas de revision
-    # y de precio de analisis se anaden al final porque son derivadas.
+    # Poner id_maestro primero para facilitar futuras uniones; las columnas de revision,
+    # de precio de analisis y de metadatos de pagina se anaden al final porque son derivadas.
     columns = ["id_maestro"] + STANDARD_COLUMNS + [
         "veredicto_revision",
         "precio_reextraido",
@@ -371,6 +475,14 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         "precio_analisis",
         "moneda_analisis",
         "origen_precio",
+        "municipio_reextraido",
+        "metodo_municipio",
+        "fecha_reextraida",
+        "estado_anuncio",
+        "vendido",
+        "evidencia_metadatos",
+        "ubicacion_analisis",
+        "origen_ubicacion",
     ]
     return merged[columns]
 

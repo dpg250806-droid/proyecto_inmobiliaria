@@ -1,17 +1,17 @@
 # Informe preliminar del mercado inmobiliario cubano
 
 Fecha de datos: 18 de octubre de 2026.
-Base integrada: 1566 anuncios (`outputs/integracion/dataset_maestro_20261018_151710.csv`).
+Base integrada: 1566 anuncios (`outputs/integracion/dataset_maestro_20261018_180138.csv`).
 
 ## Fuentes
-- Revolico: 780 anuncios desde HTML local; el acceso online sigue bloqueado por Cloudflare.
+- Revolico: 780 anuncios desde HTML local; el acceso online sigue bloqueado por Cloudflare. La pagina individual de cada anuncio si responde, y de ahi se extrajeron municipio y fecha (`extraer_metadatos_revolico.py`).
 - Cubisima: 598 anuncios de la captura online; la copia local procesada (`viviendas_cubisima.csv`) conserva 625 filas.
 - HogarEnCuba: 188 fichas de captura integral (10 de 10 páginas, 0 fallidas).
 
 ## Variables con mejor cobertura
 - Cubisima: ubicacion, habitaciones, banos, precio y fecha (100%); no publica superficie.
 - HogarEnCuba: ubicacion, habitaciones, banos y precio (100%, con 2 banos, 2 precios y 1 m2 verificados manualmente); m2 en 9/188; fecha en 88% pero relativa ("hace 2 años").
-- Revolico: volumen alto, pero municipio 37%, habitaciones 9%, banos 0% y fecha 0%.
+- Revolico: volumen alto, pero el campo publicado solo cubre municipio 37%, habitaciones 9%, banos 0% y fecha 0%. La pagina del anuncio eleva el municipio de analisis a 677/780 (87%) y aporta fecha a 622 anuncios (`updatedOnByUser`: es la fecha de ultima actualizacion que el sitio muestra como "hace X dias", no la de creacion ni la de venta); 158 anuncios ya no estan accesibles (83 despublicados, 75 borrados).
 
 ## Resultados observados
 - Precio mediano por fuente y moneda (`precio_analisis`): HogarEnCuba USD 61500 (n=186); Revolico USD 25000 (n=697); Cubisima CUC 25000 (n=529); Cubisima USD 35000 (n=4, reextracciones). Solo USD es comparable entre fuentes.
@@ -20,15 +20,20 @@ Base integrada: 1566 anuncios (`outputs/integracion/dataset_maestro_20261018_151
 - El clustering (k-means, k=3, por moneda) separa en CUC (Cubisima) un grupo economico (307 anuncios, mediana 14000), uno medio (185, 55000) y uno alto (37, 250000); en USD (186 HogarEnCuba + 4 reextracciones de Cubisima) uno economico (107, 40000), uno medio (70, 112500) y uno alto (13, 750000).
 - La divergencia entre tasas informal y formal cambia el valor equivalente del mismo precio en EUR; en CUC no aplica por ser conversion nominal.
 - La segmentacion por cuartiles muestra una separacion clara entre viviendas economicas, medias y altas dentro de cada moneda.
+- Con el municipio verificado en la pagina del anuncio, la comparacion por municipio ya es posible dentro de Revolico USD: Playa 50000 (n=137), Plaza 45000 (n=85), Centro Habana y Diez de Octubre con volumen suficiente; sigue sin ser comparable con las zonas de Cubisima (Siboney, Miramar, Vedado), que no son municipios homologos.
+- Las 622 fechas de pagina de Revolico van del 17/05/2025 al 18/10/2026, pero 619 de ellas son de agosto a octubre de 2026: miden frescura del anuncio, no momento de la operacion.
 
 ## Comparacion de canales
-- Revolico: alto volumen, baja cobertura de metadatos y sin fecha de publicacion.
+- Revolico: alto volumen; con la pagina del anuncio recupera municipio (87%) y fecha (622 anuncios), pero banos y superficie siguen ausentes y 158 anuncios ya no estan accesibles.
 - Cubisima: mejor cobertura estructurada (banos, zona, fecha) y unico registro masivo de precio en CUC.
 - HogarEnCuba: mayor precio mediano y unico con superficie, pero menor volumen y fechas relativas.
 
 ## Limitaciones
-- Revolico bloqueado para scraping automatico; se usa HTML guardado.
+- El listado de Revolico esta bloqueado para scraping automatico; se usa HTML guardado. La extraccion de metadatos consulta la pagina individual de cada anuncio con espera y reintentos, y registra su estado.
 - Los anuncios no son transacciones cerradas.
+- La fecha de Revolico es `updatedOnByUser` (fecha de actualizacion mostrada como "hace X dias"); no confirma fecha de creacion ni de venta, y no se mezcla con `fecha_publicacion` de las otras fuentes.
+- Sesion de disponibilidad: 158 de 780 anuncios de Revolico ya no estan accesibles (83 despublicados, 75 borrados); no se descartan, pero no pueden verificarse, lo que introduce sesgo de disponibilidad.
+- Municipio de Cubisima en la tabla por zona son zonas (Siboney, Miramar, Vedado), no municipios homologos con los de Revolico y HogarEnCuba.
 - m2 disponible en muy pocos casos (9 de 1566) y no se imputa.
 - Los 5 anuncios en CUP de Revolico se marcan como sospechosos y quedan fuera de conversion.
 - Los 59 precios inferiores a 100 se revisaron uno a uno contra la descripcion del anuncio (`revisar_descripciones_precios_bajos.py`): 13 tenian el precio del campo publicado erroneo (la descripcion indicaba montos entre 6000 y 90000 USD), 4 eran productos, 1 permuta, 1 local comercial, 4 anuncios retirados y 14 sin precio en la descripcion. Los 37 quedan marcados como sospechosos con su veredicto en `veredicto_revision`; la evidencia esta en `revision_manual/precios_bajos.csv` y en `outputs/validacion/revision_descripciones_*.md`.

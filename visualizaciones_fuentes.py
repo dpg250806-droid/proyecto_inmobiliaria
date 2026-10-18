@@ -89,15 +89,19 @@ def plot_price_distribution(frame: pd.DataFrame):
 
 
 def plot_municipality_median(frame: pd.DataFrame):
+    # `ubicacion_analisis` prefiere el municipio verificado en la pagina del anuncio.
+    ubicacion = (
+        frame["ubicacion_analisis"] if "ubicacion_analisis" in frame else frame["ubicacion_raw"]
+    ).fillna("").astype(str).str.strip()
     subset = frame[
-        frame["ubicacion_raw"].notna()
+        ubicacion.ne("")
         & frame["precio_analisis"].notna()
         & frame["moneda_analisis"].ne("")
     ].copy()
     if subset.empty:
         return None
     # Normalizar binario de municipio.
-    subset["municipio_grafico"] = subset["ubicacion_raw"].astype(str).str.strip().str.title()
+    subset["municipio_grafico"] = subset["ubicacion_analisis"].fillna("").astype(str).str.strip().str.title()
     counts = subset.groupby(["moneda_analisis", "municipio_grafico"]).size()
     usable = counts[counts.ge(10)].index
     subset = subset.set_index(["moneda_analisis", "municipio_grafico"]).loc[lambda x: x.index.isin(usable)].reset_index()
