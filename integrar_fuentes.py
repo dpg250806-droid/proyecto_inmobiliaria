@@ -259,6 +259,47 @@ def hogarencuba_source_path(root: Path) -> Path | None:
     return max(candidates, key=lambda item: (item[0], item[1]))[2] if candidates else None
 
 
+VEREDICTOS_EXCLUYENTES = {
+    "alquiler",
+    "despublicado",
+    "error",
+    "no_verificable",
+    "otro",
+    "permuta",
+    "producto",
+}
+
+
+def aplicar_veredictos_revision(
+    frame: pd.DataFrame, ruta: Path = REPO_ROOT / "revision_manual" / "precios_bajos.csv"
+) -> pd.DataFrame:
+    """Aplica la revision manual de precios bajos sobre el maestro.
+
+    Los anuncios con veredicto excluyente quedan marcados como `precio_sospechoso` y
+    conservan su veredicto en `veredicto_revision`. No se borra ni se corrige ningun
+    valor original: el precio observado en la descripcion se registra en el CSV de
+    revision, no en el maestro.
+    """
+    frame = frame.copy()
+    frame["veredicto_revision"] = ""
+    if not ruta.exists():
+        return frame
+    revision = pd.read_csv(ruta, dtype=str).fillna("")
+    revision["veredicto"] = revision["veredicto"].str.strip().str.lower()
+    revision = revision[revision["veredicto"].isin(VEREDICTOS_EXCLUYENTES)]
+    if revision.empty:
+        return frame
+    veredictos = dict(zip(revision["url"], revision["veredicto"]))
+    afectados = frame["url"].isin(veredictos)
+    frame.loc[afectados, "precio_sospechoso"] = True
+    frame.loc[afectados, "veredicto_revision"] = frame.loc[afectados, "url"].map(veredictos)
+    print(
+        f"Revision manual de precios bajos: {int(afectados.sum())} anuncios marcados "
+        f"(fuente: {ruta.relative_to(REPO_ROOT) if ruta.is_relative_to(REPO_ROOT) else ruta})"
+    )
+    return frame
+
+
 def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
     root = REPO_ROOT
     revolico_path = root / "anuncios_revolico_procesados.csv"
@@ -284,10 +325,12 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         merged = merged.sort_values("_quality_key", ascending=False).drop_duplicates(subset=["url"], keep="first")
         merged = merged.drop(columns=["_quality_key"])
 
+    merged = aplicar_veredictos_revision(merged)
     merged = merged.sort_values(["fuente", "id_local"], kind="stable").reset_index(drop=True)
     merged["id_maestro"] = [f"maestro_{i:06d}" for i in range(1, len(merged) + 1)]
-    # Poner id_maestro primero para facilitar futuras uniones.
-    columns = ["id_maestro"] + STANDARD_COLUMNS
+    # Poner id_maestro primero para facilitar futuras uniones; veredicto_revision
+    # se anade al final porque es una columna derivada de la revision manual.
+    columns = ["id_maestro"] + STANDARD_COLUMNS + ["veredicto_revision"]
     return merged[columns]
 
 
@@ -300,7 +343,6 @@ def main():
     out_dir = REPO_ROOT / "outputs" / "integracion"
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output = out_dir / f"dataset_maestro_20261015_{stamp.split('_')[-1]}.csv"
     # Usar un nombre claro y reproducible con fecha+hora.
     output = out_dir / f"dataset_maestro_{stamp}.csv"
     frame.to_csv(output, index=False, encoding="utf-8-sig")

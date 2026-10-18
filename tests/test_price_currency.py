@@ -10,6 +10,7 @@ import pandas as pd
 
 from clustering_viviendas import kmeans
 from comparativo_fuentes import channel_summary, prepare, summary_table
+from integrar_fuentes import aplicar_veredictos_revision
 from convertir_precios_tasas import convertir, latest_rate_file
 from integrar_fuentes import hogarencuba_source_path
 from analisis_preguntas import rank_associations
@@ -390,6 +391,40 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         self.assertTrue((labels == labels_repeat).all())
         with self.assertRaises(ValueError):
             kmeans(data[:2], k=3)
+
+    def test_aplica_veredictos_de_revision_manual_de_precios_bajos(self):
+        frame = pd.DataFrame(
+            [
+                {"url": "https://ejemplo/a", "precio_sospechoso": False},
+                {"url": "https://ejemplo/b", "precio_sospechoso": False},
+                {"url": "https://ejemplo/c", "precio_sospechoso": False},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            ruta = Path(folder) / "precios_bajos.csv"
+            pd.DataFrame(
+                [
+                    {"url": "https://ejemplo/a", "veredicto": "Error"},
+                    {"url": "https://ejemplo/b", "veredicto": "producto"},
+                    {"url": "https://ejemplo/c", "veredicto": "venta"},
+                ]
+            ).to_csv(ruta, index=False)
+            resultado = aplicar_veredictos_revision(frame, ruta)
+        self.assertTrue(bool(resultado.loc[0, "precio_sospechoso"]))
+        self.assertEqual(resultado.loc[0, "veredicto_revision"], "error")
+        self.assertTrue(bool(resultado.loc[1, "precio_sospechoso"]))
+        self.assertEqual(resultado.loc[1, "veredicto_revision"], "producto")
+        # veredicto "venta" no excluye y no cambia el flag
+        self.assertFalse(bool(resultado.loc[2, "precio_sospechoso"]))
+        self.assertEqual(resultado.loc[2, "veredicto_revision"], "")
+
+    def test_veredictos_vacios_no_modifican_el_maestro(self):
+        frame = pd.DataFrame([{"url": "https://ejemplo/a", "precio_sospechoso": False}])
+        with tempfile.TemporaryDirectory() as folder:
+            ruta = Path(folder) / "no_existe.csv"
+            resultado = aplicar_veredictos_revision(frame, ruta)
+        self.assertFalse(bool(resultado.loc[0, "precio_sospechoso"]))
+        self.assertIn("veredicto_revision", resultado.columns)
 
     def test_segments_are_calculated_separately_by_currency(self):
         frame = pd.DataFrame([
