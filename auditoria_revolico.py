@@ -327,7 +327,7 @@ def principal() -> None:
     lineas.append("- No se verificaron las paginas individuales de anuncios, por lo que no se confirmo la disponibilidad de baños, m2, planta, garaje o fecha.")
     lineas.append("- No se ejecuto limpieza, deduplicacion robusta ni analisis estadistico/visual mas alla de conteos.")
     lineas.append("- No se comprobo correspondencia entre CSV y commit concreto; las paginas HTML estan ignoradas por Git.")
-    lineas.append("- No se integraron archivos de Cubisima ni se modifico `analisis_inmobiliario.py`.")
+    lineas.append("- No se integraron archivos de Cubisima en esta auditoria.")
     lineas.append("")
 
     lineas.append("## 10. Conclusion")

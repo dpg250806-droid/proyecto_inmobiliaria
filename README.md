@@ -27,7 +27,6 @@ Resultados principales verificados:
 - `scraper_revolico.py`: comprobacion basica de conexion a Revolico. No guarda datos.
 - `leer_paginas_revolico.py`: lee las 8 paginas HTML guardadas y construye `enlaces_anuncios_revolico.csv`.
 - `procesar_anuncios_revolico.py`: limpia URLs, extrae precio, moneda, municipio y habitaciones desde el titulo, clasifica los anuncios y genera los CSV segmentados.
-- `analisis_inmobiliario.py`: script didactico con datos de ejemplo. No analiza el dataset real y puede sobrescribir `viviendas.csv`, `viviendas_limpias.csv` y `anuncio.json`.
 - `auditoria_revolico.py`: auditoria exclusivamente de lectura. Genera un informe en `outputs/auditoria/`.
 - `limpiar_revolico.py`: limpieza no destructiva. Genera un dataset derivado y un resumen en `outputs/limpieza/`.
 - `scraper_cubisima.py`: entrada compatible que delega en `scraper_cubisima_online.py`; ya no tiene scraping al importar ni sobrescribe el CSV original.
@@ -129,6 +128,7 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `2026-10-17 23:54` - Validación final: 22 pruebas offline, compilación en memoria de 39 archivos Python y `git diff --check` sin errores.
 - `2026-10-18 00:24` - Rango de fechas de los 546 anuncios CUC de Cubisima: 17/10/2023 a 12/10/2026, 100% posteriores a 2021. La conversion nominal 1:1 quedo condicionada a esa fecha de publicacion y documentada como paridad, no como tasa; 540 convertidos y 6 precios sospechosos excluidos. 23 pruebas offline en verde.
 - `2026-10-18 00:51` - Revision integral: pipeline offline completo (auditoria, EDA, limpieza, integracion, conversion, comparativo, segmentacion, clustering, preguntas, validacion, visualizaciones) y smokes de 1 pagina de Cubisima y HogarEnCuba mas Revolico local (8 paginas, 780 unicos). Corregidos: etiqueta `anuncios` de `limpieza_integrada.py` (size, no count), texto dinamico del bloque de clustering en `analisis_preguntas.py`, patron de `sospechoso` con escape ASCII, seleccion del snapshot de tasas util (ignora intentos bloqueados) y `.gitignore` para enlaces Revolico fechados. 24 pruebas offline en verde; `informe_preliminar.md` actualizado con los numeros vigentes.
+- `2026-10-18 01:08` - Retirados `analisis_inmobiliario.py` (datos de ejemplo) y 4 utilidades locales de exploracion sin uso; referencias actualizadas en README, `data_dictionary.md` y `auditoria_revolico.py`. Clustering ampliado a todas las fuentes: CUC 540 (Cubisima) y USD 186 (HogarEnCuba), EUR excluida con 2 observaciones y Revolico por no tener banos; salidas renombradas a `clusters_viviendas_*` con test de `kmeans`. 25 pruebas offline en verde.
 
 ## Limitaciones conocidas
 
@@ -139,7 +139,7 @@ Esta seccion resume el trabajo realizado y la fecha/hora de cada bloque, para se
 - `datos_revolico_json.csv` no es una fuente de viviendas exclusiva; contiene anuncios de productos diversos.
 - No se han verificado las paginas individuales de anuncios para confirmar ba├▒os, metros cuadrados, planta, garaje o fechas.
 - Los CSV originales de Cubisima y los maestros anteriores pueden reflejar parsers previos; la copia reprocesada y los snapshots recientes estan separados y fechados.
-- `analisis_inmobiliario.py` contiene datos de ejemplo y puede sobrescribir sus tres CSV/JSON de ejemplo.
+- `viviendas.csv`, `viviendas_limpias.csv` y `anuncio.json` son salidas de ejemplo con datos inventados de un script retirado el 2026-10-18; se conservan como evidencia y no se usan en ningun analisis.
 
 ## Datos aun no verificados
 

@@ -196,16 +196,22 @@ def main():
     cluster_files = sorted((ROOT / "outputs" / "clustering").glob("clusters_*.csv"))
     if cluster_files:
         latest_cluster = cluster_files[-1]
-        grupos = pd.read_csv(latest_cluster, usecols=["cluster"])["cluster"].nunique()
+        clusters = pd.read_csv(latest_cluster)
+        grupos = clusters["cluster"].nunique()
+        detalle = "; ".join(
+            f"{moneda}: {len(rows)} anuncios de {', '.join(sorted(rows['fuente'].unique()))}"
+            for moneda, rows in clusters.groupby("moneda")
+        )
         lines.append(
-            "El script `clustering_viviendas.py` agrupa por separado cada moneda. "
-            f"Resultado vigente: `{latest_cluster.name}` con {grupos} grupos; "
-            "los centros estan en `centroides_clusters_*.csv`. "
-            "La agrupacion actual cubre Cubisima (CUC), la unica moneda con masa suficiente para k-means."
+            "El script `clustering_viviendas.py` aplica k-means (k=3) por separado a cada moneda "
+            "con al menos 30 observaciones, sobre precio, habitaciones y banos y sin precios sospechosos. "
+            f"Resultado vigente: `{latest_cluster.name}` con {grupos} grupos por moneda ({detalle}). "
+            "Los centros estan en `centroides_clusters_*.csv`. "
+            "Revolico queda fuera por no tener banos y EUR por tener pocas observaciones."
         )
     else:
         lines.append(
-            "El script `clustering_viviendas.py` agrupa por separado cada moneda; "
+            "El script `clustering_viviendas.py` aplica k-means por separado a cada moneda; "
             "aun no hay resultados guardados en `outputs/clustering/`."
         )
     lines.append("")

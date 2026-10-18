@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Clustering por k-medias sobre precio, habitaciones y banos."""
+"""Clustering por k-medias sobre precio, habitaciones y banos.
+
+Agrupa por separado cada moneda con al menos 30 observaciones; excluye precios
+sospechosos y filas incompletas. Participan todas las fuentes que tengan los tres
+campos disponibles.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,15 +61,20 @@ def main():
     else:
         suspicious = pd.Series(False, index=frame.index)
     data = frame[
-        (frame["fuente"] == "Cubisima")
-        & frame["precio_original"].notna()
+        frame["precio_original"].notna()
         & frame["habitaciones"].notna()
         & frame["banos"].notna()
         & frame["moneda"].ne("")
         & ~suspicious
     ].copy()
-    usable_currencies = data["moneda"].value_counts()
-    usable_currencies = usable_currencies[usable_currencies >= 30].index
+    counts = data["moneda"].value_counts()
+    usable_currencies = counts[counts >= 30].index
+    excluidas = counts[counts < 30]
+    if not excluidas.empty:
+        print(
+            "Monedas excluidas (menos de 30 observaciones): "
+            + ", ".join(f"{m}: {n}" for m, n in excluidas.items())
+        )
     data = data[data["moneda"].isin(usable_currencies)].copy()
     if data.empty:
         print("No hay suficientes datos completos para clustering.")
@@ -91,7 +101,7 @@ def main():
             })
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data.to_csv(OUT / f"clusters_cubisima_{stamp}.csv", index=False, encoding="utf-8-sig")
+    data.to_csv(OUT / f"clusters_viviendas_{stamp}.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(center_rows).to_csv(OUT / f"centroides_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
 
     profile = data.groupby(["moneda", "cluster"]).agg(
@@ -114,8 +124,8 @@ def main():
     )
     graph.set_axis_labels("Habitaciones", "Precio original")
     graph.set_titles("Moneda: {col_name}")
-    graph.fig.suptitle("Clustering de Cubisima (precios separados por moneda)", y=1.02)
-    graph.fig.savefig(OUT / "clusters_cubisima.png", dpi=140, facecolor="white")
+    graph.fig.suptitle("Clustering de viviendas (k-means por moneda)", y=1.02)
+    graph.fig.savefig(OUT / "clusters_viviendas.png", dpi=140, facecolor="white")
     plt.close(graph.fig)
     print(f"Clusters guardados en {OUT}")
 

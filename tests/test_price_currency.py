@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 
+from clustering_viviendas import kmeans
 from comparativo_fuentes import channel_summary, prepare, summary_table
 from convertir_precios_tasas import convertir, latest_rate_file
 from integrar_fuentes import hogarencuba_source_path
@@ -371,6 +373,23 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
             pd.DataFrame([{"fecha_utc": "2026-10-20", "usd_informal_cup": None}]).to_csv(util, index=False)
             with self.assertRaises(ValueError):
                 latest_rate_file(folder, "tasas_cambio_*.csv")
+
+    def test_kmeans_returns_stable_groups_for_separated_blobs(self):
+        data = np.array(
+            [
+                [0.0, 0.0], [0.0, 1.0], [1.0, 0.0],
+                [10.0, 10.0], [10.0, 11.0], [11.0, 10.0],
+                [20.0, 20.0], [20.0, 21.0], [21.0, 20.0],
+            ]
+        )
+        labels, centroids = kmeans(data, k=3, seed=42)
+        self.assertEqual(len(labels), len(data))
+        self.assertEqual(len(np.unique(labels)), 3)
+        self.assertEqual(centroids.shape, (3, 2))
+        labels_repeat, _ = kmeans(data, k=3, seed=42)
+        self.assertTrue((labels == labels_repeat).all())
+        with self.assertRaises(ValueError):
+            kmeans(data[:2], k=3)
 
     def test_segments_are_calculated_separately_by_currency(self):
         frame = pd.DataFrame([

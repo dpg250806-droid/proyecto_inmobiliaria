@@ -82,10 +82,10 @@ Mismas columnas que el dataset procesado. Ausencias verificadas:
 ## CSV pequenos de ejemplo
 
 ### `viviendas.csv`
-3 filas x 3 columnas (`municipio`, `precio`, `habitaciones`). Generado por `analisis_inmobiliario.py` con datos inventados. No representa anuncios reales.
+3 filas x 3 columnas (`municipio`, `precio`, `habitaciones`). Generado por `analisis_inmobiliario.py` (script de ejemplo retirado el 2026-10-18) con datos inventados. No representa anuncios reales y no interviene en ningun analisis.
 
 ### `viviendas_limpias.csv`
-2 filas x 3 columnas (`municipio`, `precio`, `habitaciones`). Generado por `analisis_inmobiliario.py` con datos inventados. No representa anuncios reales.
+2 filas x 3 columnas (`municipio`, `precio`, `habitaciones`). Generado por `analisis_inmobiliario.py` (script de ejemplo retirado el 2026-10-18) con datos inventados. No representa anuncios reales y no interviene en ningun analisis.
 
 ## Cubisima (snapshot local)
 
