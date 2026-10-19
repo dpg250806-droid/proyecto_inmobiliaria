@@ -15,7 +15,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from precio_moneda import precios_analisis
+from precio_moneda import detalle_analisis, precios_analisis
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -403,6 +403,84 @@ def aplicar_metadatos_revolico(
     return frame
 
 
+def aplicar_detalle_anuncios(
+    frame: pd.DataFrame, ruta: Path | None = None
+) -> pd.DataFrame:
+    """Anade habitaciones y banos leidos del texto de cada anuncio de Revolico.
+
+    `extraer_detalle_anuncios_revolico.py` busca la cantidad escrita por el
+    anunciante en descripcion, titulo y enlace (slug), con patrones
+    conservadores; aqui se aplican las columnas por URL sin tocar el campo
+    publicado. Quien decide que valor se analiza es `detalle_analisis()`.
+
+    Tambien documenta, con evidencia, la ventana de desaparicion de los anuncios
+    borrados o despublicados: el listado guardado donde aun aparecian se descargo
+    el dia que marca el timestamp de Cloudflare del HTML, y la pagina del anuncio
+    se consulto en la fecha de la extraccion de metadatos. La desaparicion
+    ocurrio dentro de ese intervalo; el anuncio no se elimina del dataset.
+    """
+    frame = frame.copy()
+    nuevas = [
+        "habitaciones_reextraido", "banos_reextraido",
+        "habitaciones_slug", "banos_slug",
+        "evidencia_detalle", "conflicto_detalle",
+        "fecha_ultima_disponibilidad", "ventana_despublicacion",
+        "justificacion_disponibilidad",
+    ]
+    numericas = {"habitaciones_reextraido", "banos_reextraido", "habitaciones_slug", "banos_slug"}
+    for columna in nuevas:
+        frame[columna] = np.nan if columna in numericas else ""
+    if ruta is None:
+        candidatos = sorted(
+            (REPO_ROOT / "outputs" / "metadatos_revolico").glob("detalle_anuncios_revolico_*.csv")
+        )
+        if not candidatos:
+            return frame
+        ruta = candidatos[-1]
+    if not ruta.exists():
+        return frame
+    detalle = pd.read_csv(ruta, dtype=str).fillna("")
+    detalle = detalle.drop_duplicates(subset=["url"], keep="last")
+    if detalle.empty or "url" not in detalle:
+        return frame
+    indices = frame.index[frame["url"].isin(set(detalle["url"]))]
+    if indices.empty:
+        return frame
+    por_url = detalle.set_index("url")
+    correspondencia = frame.loc[indices, "url"]
+    asignar = {
+        "habitaciones_reextraido": "habitaciones_descripcion",
+        "banos_reextraido": "banos_descripcion",
+        "habitaciones_slug": "habitaciones_slug",
+        "banos_slug": "banos_slug",
+        "evidencia_detalle": "evidencia_detalle",
+        "conflicto_detalle": "conflicto_detalle",
+    }
+    for destino, origen in asignar.items():
+        serie = correspondencia.map(por_url[origen])
+        frame.loc[indices, destino] = pd.to_numeric(serie, errors="coerce") if destino in numericas else serie
+    # Ventana de desaparicion: solo para los que ya no estan publicados.
+    estado = correspondencia.map(por_url["estado"])
+    snapshot = correspondencia.map(por_url["fecha_snapshot_listado"])
+    consulta = correspondencia.map(por_url["fecha_extraccion"]).astype(str).str.slice(0, 10)
+    afectados = estado.index[estado.ne("publicado") & estado.ne("")]
+    frame.loc[afectados, "fecha_ultima_disponibilidad"] = snapshot.loc[afectados]
+    frame.loc[afectados, "ventana_despublicacion"] = (
+        snapshot.loc[afectados] + " a " + consulta.loc[afectados]
+    )
+    frame.loc[afectados, "justificacion_disponibilidad"] = [
+        f"aparecia en el listado guardado del {s}; al consultar la pagina el {c} devolvio {e}"
+        for s, c, e in zip(snapshot.loc[afectados], consulta.loc[afectados], estado.loc[afectados])
+    ]
+    borrados = len(afectados)
+    print(
+        f"Detalle de anuncios aplicado: {len(indices)} anuncios de Revolico "
+        f"({borrados} con ventana de desaparicion documentada; "
+        f"fuente: {ruta.relative_to(REPO_ROOT) if ruta.is_relative_to(REPO_ROOT) else ruta})"
+    )
+    return frame
+
+
 def ubicacion_analisis(frame: pd.DataFrame) -> tuple[pd.Series, str]:
     """Devuelve (ubicacion de analisis, origen) para cada fila del maestro.
 
@@ -456,6 +534,7 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
 
     merged = aplicar_veredictos_revision(merged)
     merged = aplicar_metadatos_revolico(merged)
+    merged = aplicar_detalle_anuncios(merged)
     merged["precio_analisis"], merged["moneda_analisis"] = precios_analisis(merged)
     merged["origen_precio"] = "excluido"
     merged.loc[merged["precio_analisis"].notna(), "origen_precio"] = "campo_publicado"
@@ -463,6 +542,14 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
     # Ubicacion de analisis: municipio verificado en la pagina del anuncio primero,
     # campo publicado despues; vacio en el resto. No se imputa.
     merged["ubicacion_analisis"], merged["origen_ubicacion"] = ubicacion_analisis(merged)
+    # Habitaciones y banos de analisis: texto del anuncio primero, campo publicado
+    # despues, slug del enlace al final; vacio si nada lo dice. No se imputa.
+    (
+        merged["habitaciones_analisis"],
+        merged["banos_analisis"],
+        merged["origen_habitaciones"],
+        merged["origen_banos"],
+    ) = detalle_analisis(merged)
     merged = merged.sort_values(["fuente", "id_local"], kind="stable").reset_index(drop=True)
     merged["id_maestro"] = [f"maestro_{i:06d}" for i in range(1, len(merged) + 1)]
     # Poner id_maestro primero para facilitar futuras uniones; las columnas de revision,
@@ -483,6 +570,19 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         "evidencia_metadatos",
         "ubicacion_analisis",
         "origen_ubicacion",
+        "habitaciones_reextraido",
+        "banos_reextraido",
+        "habitaciones_slug",
+        "banos_slug",
+        "evidencia_detalle",
+        "conflicto_detalle",
+        "habitaciones_analisis",
+        "banos_analisis",
+        "origen_habitaciones",
+        "origen_banos",
+        "fecha_ultima_disponibilidad",
+        "ventana_despublicacion",
+        "justificacion_disponibilidad",
     ]
     return merged[columns]
 

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda, precios_analisis
+from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_GLOB = "outputs/integracion/dataset_maestro_*.csv"
@@ -134,18 +134,18 @@ def plot_municipality_median(frame: pd.DataFrame):
 
 def plot_rooms_price(frame: pd.DataFrame):
     subset = frame[
-        frame["habitaciones"].notna()
+        frame["habitaciones_analisis"].notna()
         & frame["precio_analisis"].notna()
         & frame["moneda_analisis"].ne("")
     ].copy()
     if subset.empty:
         return None
-    subset["habitaciones"] = subset["habitaciones"].clip(1, 8).astype(int).astype(str)
-    order = sorted(subset["habitaciones"].unique(), key=lambda x: int(x))
-    g = sns.catplot(data=subset, x="habitaciones", y="precio_analisis", hue="fuente",
+    subset["habitaciones_analisis"] = subset["habitaciones_analisis"].clip(1, 8).astype(int).astype(str)
+    order = sorted(subset["habitaciones_analisis"].unique(), key=lambda x: int(x))
+    g = sns.catplot(data=subset, x="habitaciones_analisis", y="precio_analisis", hue="fuente",
                     col="moneda_analisis", kind="box", height=4.8, aspect=1.05, order=order,
                     showfliers=False)
-    g.set_axis_labels("Habitaciones (agrupadas)", "Precio de analisis")
+    g.set_axis_labels("Habitaciones (agrupadas, mejor dato disponible)", "Precio de analisis")
     g.set_titles("{col_name}")
     path = save(g.figure, "03_habitaciones_precio_por_moneda.png")
     return path
@@ -270,8 +270,8 @@ def write_summary(frame: pd.DataFrame, paths: dict):
         anuncios=("id_maestro", "count"),
         precio=("precio_original", lambda s: pd.notna(s).sum()),
         municipio_zona=("ubicacion_raw", lambda s: pd.notna(s).sum()),
-        habitaciones=("habitaciones", lambda s: pd.notna(s).sum()),
-        banos=("banos", lambda s: pd.notna(s).sum()),
+        habitaciones_analisis=("habitaciones_analisis", lambda s: pd.notna(s).sum()),
+        banos_analisis=("banos_analisis", lambda s: pd.notna(s).sum()),
     )
     lines.append(counts.to_markdown())
     lines.append("")
@@ -284,9 +284,9 @@ def write_summary(frame: pd.DataFrame, paths: dict):
     lines.append(stats.to_markdown(index=False))
     lines.append("")
     lines.append("## Habitaciones vs precio en Cubisima")
-    cub = usable[usable["fuente"].eq("Cubisima") & usable["habitaciones"].notna()]
+    cub = usable[usable["fuente"].eq("Cubisima") & usable["habitaciones_analisis"].notna()]
     if not cub.empty:
-        hab_stats = cub.groupby(["moneda_analisis", "habitaciones"])["precio_analisis"].agg(["count", "median", "mean"]).round(2)
+        hab_stats = cub.groupby(["moneda_analisis", "habitaciones_analisis"])["precio_analisis"].agg(["count", "median", "mean"]).round(2)
         lines.append(hab_stats.to_markdown())
     else:
         lines.append("Sin datos suficientes.")
@@ -319,6 +319,14 @@ def main():
     frame["fecha_descarga"] = pd.to_datetime(frame["fecha_descarga"], errors="coerce")
     # Precio de analisis: reextraccion manual primero, campos sospechosos fuera.
     frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
+    # Habitaciones y banos de analisis (texto del anuncio, campo publicado o slug);
+    # en maestros antiguos sin esas columnas, `detalle_analisis` cae al publicado.
+    (
+        frame["habitaciones_analisis"],
+        frame["banos_analisis"],
+        _,
+        _,
+    ) = detalle_analisis(frame)
     frame = money_labels(frame)
 
     paths = {}

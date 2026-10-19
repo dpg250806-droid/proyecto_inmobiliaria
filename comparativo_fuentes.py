@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda, precios_analisis
+from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -33,13 +33,23 @@ def prepare(frame: pd.DataFrame) -> pd.DataFrame:
     frame["precio_original"] = pd.to_numeric(frame["precio_original"], errors="coerce")
     frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
     frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
-    frame["superficie_m2"] = pd.to_numeric(frame["superficie_m2"], errors="coerce") if "superficie_m2" in frame else np.nan
     frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
     if "precio_sospechoso" in frame:
         frame["precio_sospechoso"] = frame["precio_sospechoso"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "si", "sí"])
     # El precio de analisis prefiere la reextraccion manual y excluye los campos
     # sospechosos; la cobertura (summary_table) sigue midiendo el campo publicado.
     frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
+    # Habitaciones y banos de analisis (texto del anuncio, campo publicado o slug);
+    # `detalle_analisis` cae al campo publicado si no hay columnas de reextraccion.
+    # Se usan para las metricas de canal; la cobertura por fuente sigue midiendo
+    # el campo publicado. La superficie (m2) queda fuera del analisis porque
+    # ninguna fuente la publica de forma sistemática.
+    (
+        frame["habitaciones_analisis"],
+        frame["banos_analisis"],
+        _,
+        _,
+    ) = detalle_analisis(frame)
     frame["canal_normalizado"] = frame["canal"].fillna("desconocido").astype(str).str.lower()
 
     def canal(row):
@@ -62,7 +72,6 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
             "ubicacion_pct": round(100 * g["ubicacion_raw"].notna().mean(), 1),
             "habitaciones_pct": round(100 * g["habitaciones"].notna().mean(), 1),
             "banos_pct": round(100 * g["banos"].notna().mean(), 1),
-            "m2_pct": round(100 * g["superficie_m2"].notna().mean(), 1),
             "precio_pct": round(100 * g["precio_original"].notna().mean(), 1),
             "moneda_pct": round(100 * g["moneda"].ne("").mean(), 1),
             "fecha_pct": round(100 * g["fecha_publicacion"].notna().mean(), 1),
@@ -83,15 +92,15 @@ def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
             "anuncios": len(g),
             "anuncios_con_precio": int(g["precio_analisis"].notna().sum()),
             "mediana_precio": g["precio_analisis"].median(),
-            "con_banos_pct": round(100 * g["banos"].notna().mean(), 1),
-            "con_m2_pct": round(100 * g["superficie_m2"].notna().mean(), 1),
+            "con_habitaciones_pct": round(100 * g["habitaciones_analisis"].notna().mean(), 1),
+            "con_banos_pct": round(100 * g["banos_analisis"].notna().mean(), 1),
             "con_fecha_pct": round(100 * g["fecha_publicacion"].notna().mean(), 1),
         })
     return pd.DataFrame(rows)
 
 
 def plot_coverage(summary: pd.DataFrame):
-    metrics = ["ubicacion_pct", "habitaciones_pct", "banos_pct", "m2_pct", "precio_pct", "moneda_pct", "fecha_pct"]
+    metrics = ["ubicacion_pct", "habitaciones_pct", "banos_pct", "precio_pct", "moneda_pct", "fecha_pct"]
     long = summary.melt(id_vars="fuente", value_vars=metrics, var_name="variable", value_name="cobertura_pct")
     long["variable"] = long["variable"].str.replace("_pct", "", regex=False)
     fig, ax = plt.subplots(figsize=(11, 5.5))
@@ -127,22 +136,22 @@ def plot_channel_price(frame: pd.DataFrame):
     plt.close(graph.fig)
 
 
-def plot_channel_m2(frame: pd.DataFrame):
+def plot_channel_rooms(frame: pd.DataFrame):
     channel = frame.groupby("canal_grafico").agg(
-        con_m2_pct=("superficie_m2", lambda s: round(100 * s.notna().mean(), 1))
+        con_habitaciones_pct=("habitaciones_analisis", lambda s: round(100 * s.notna().mean(), 1))
     ).reset_index()
     fig, ax = plt.subplots(figsize=(8, 4.5))
     bars = ax.bar(
         channel["canal_grafico"],
-        channel["con_m2_pct"],
+        channel["con_habitaciones_pct"],
         color=["#4472c4", "#70ad47", "#ffc759"][:len(channel)],
     )
-    ax.bar_label(bars, labels=[f"{v:.1f}%" for v in channel["con_m2_pct"]], padding=2)
-    ax.set_title("Cobertura de superficie (m²) por canal")
-    ax.set_ylabel("% de anuncios con m²")
+    ax.bar_label(bars, labels=[f"{v:.1f}%" for v in channel["con_habitaciones_pct"]], padding=2)
+    ax.set_title("Cobertura de habitaciones (mejor dato disponible) por canal")
+    ax.set_ylabel("% de anuncios con habitaciones")
     plt.setp(ax.get_xticklabels(), rotation=12, ha="right")
     plt.tight_layout()
-    fig.savefig(OUT / "03_cobertura_m2_por_canal.png", dpi=140, facecolor="white")
+    fig.savefig(OUT / "03_cobertura_habitaciones_por_canal.png", dpi=140, facecolor="white")
     plt.close(fig)
 
 
@@ -171,7 +180,7 @@ def main():
 
     plot_coverage(sources)
     plot_channel_price(frame)
-    plot_channel_m2(frame)
+    plot_channel_rooms(frame)
     plot_currency_percentage(frame)
 
     # print top-line answers

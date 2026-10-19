@@ -139,6 +139,30 @@ La tarjeta del listado guardado (`paginas_revolico/`) solo contiene imagen, prec
 | `ubicacion_analisis` | texto | Ubicación que usan las medianas por municipio. Reglas: municipio verificado en la página primero; después `ubicacion_raw`; vacío si ambos faltan. No se imputa. |
 | `origen_ubicacion` | categorica | `pagina_anuncio`, `campo_publicado` o `sin_dato`. |
 
+### Habitaciones, baños y disponibilidad de Revolico
+
+La tarjeta del listado solo aporta el título, y el título casi nunca menciona baños. `extraer_detalle_anuncios_revolico.py` busca la cantidad escrita por el anunciante en la **descripción**, el **título** y el **enlace (slug)** de cada anuncio, con patrones conservadores: dígitos ("3 cuartos", "4 hab", "2 banos"), palabras ("un cuarto", "dos banos", hasta diez), notación habanera ("apto 2/4" = 2 dormitorios) y fracciones de baño ("medio bano" y "N banos y medio" suman 0.5). Reglas: primera aparición explícita gana; si el mismo texto menciona dos cantidades distintas, ambas quedan en la evidencia y el conflicto se marca sin resolver; si no hay mención, no se rellena nada. La salida es `outputs/metadatos_revolico/detalle_anuncios_revolico_<marca>.csv` y se aplica con `aplicar_detalle_anuncios()`.
+
+| Columna | Tipo | Contenido y uso |
+|:---------|:-----|:----------------|
+| `habitaciones_reextraido` | numerico | Habitaciones leídas de la descripción del anuncio. |
+| `banos_reextraido` | numerico | Baños leídos de la descripción del anuncio. |
+| `habitaciones_slug` | numerico | Habitaciones escritas en el enlace (slug), solo cuando no hay descripción. |
+| `banos_slug` | numerico | Baños escritos en el enlace (slug). |
+| `evidencia_detalle` | texto | Fragmento literal que justifica el valor extraído (p. ej. `habitaciones='4 cuartos'`). |
+| `conflicto_detalle` | texto | Marcado cuando título y descripción, o el propio texto, ofrecen cantidades distintas. No se resuelve: se conserva la primera aparición. |
+| `habitaciones_analisis` | numerico | Habitaciones que usan segmentación, clustering, medianas y gráficos. Reglas: descripción/título primero; después el campo publicado; después el slug; vacío si nada lo dice. No se imputa. |
+| `banos_analisis` | numerico | Baños con la misma regla. |
+| `origen_habitaciones` | categorica | `descripcion_o_titulo`, `campo_publicado`, `slug` o vacío. |
+| `origen_banos` | categorica | Igual que el anterior, para baños. |
+| `fecha_ultima_disponibilidad` | fecha | Para anuncios no publicados: fecha del listado guardado donde aún aparecían (timestamp de Cloudflare del HTML). |
+| `ventana_despublicacion` | texto | Intervalo `AAAA-MM-DD a AAAA-MM-DD` dentro del cual ocurrió la desaparición: desde el listado guardado hasta la consulta que devolvió el error. Es un límite con evidencia, no una fecha exacta: la página borrada no conserva fecha. |
+| `justificacion_disponibilidad` | texto | Explicación legible de por qué el anuncio sigue en el dataset pese a no estar accesible. |
+
+La función `detalle_analisis()` de `precio_moneda.py` implementa la regla de precedencia en un solo sitio y también funciona con maestros antiguos sin columnas de reextracción (cae al campo publicado). **Cobertura honesta (Revolico, 780 anuncios):** habitaciones 532 (68%) y baños 289 (37%). El techo lo fija el propio texto: 158 anuncios ya no están accesibles y no tienen descripción, y otros anuncios publicados simplemente no mencionan la cantidad. No se imputa nada.
+
+El **m² queda fuera del análisis**: ninguna fuente lo publica de forma sistemática (Revolico 0%, Cubisima 0%, HogarEnCuba ~5%). La columna `superficie_m2` se conserva en el maestro solo como traza de origen; su cobertura se reporta como hallazgo comparativo (los clasificados informales no lo ofrecen), nunca como variable explicativa de precios.
+
 La función `precios_analisis()` de `precio_moneda.py` implementa estas reglas en un solo sitio y también funciona con maestros antiguos que no tienen las columnas nuevas. Los scripts derivados regeneran sus salidas con fecha y hora propias; los resultados antiguos no se sobrescriben.
 
 ## Tasas y equivalencias

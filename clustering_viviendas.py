@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from precio_moneda import normalizar_moneda, precios_analisis
+from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -53,12 +53,18 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     frame = pd.read_csv(newest(MASTER_DIR, "dataset_maestro_*.csv"), dtype=str)
     frame["precio_original"] = pd.to_numeric(frame["precio_original"], errors="coerce")
-    frame["habitaciones"] = pd.to_numeric(frame["habitaciones"], errors="coerce")
-    frame["banos"] = pd.to_numeric(frame["banos"], errors="coerce")
     frame["moneda"] = frame["moneda"].map(normalizar_moneda).fillna("")
     # El precio de analisis prefiere la reextraccion manual y excluye los campos
     # sospechosos; `precio_original` queda disponible para auditoria.
     frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
+    # Habitaciones y banos de analisis (texto del anuncio, campo publicado o slug);
+    # `detalle_analisis` cae al campo publicado si no hay columnas de reextraccion.
+    (
+        frame["habitaciones"],
+        frame["banos"],
+        _,
+        _,
+    ) = detalle_analisis(frame)
     data = frame[
         frame["precio_analisis"].notna()
         & frame["habitaciones"].notna()

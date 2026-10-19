@@ -128,3 +128,40 @@ def precios_analisis(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     precio = reextraido.where(con_reextraccion, campo.where(usable_campo))
     moneda = moneda_reextraida.where(con_reextraccion, moneda_campo.where(usable_campo)).fillna("")
     return precio, moneda
+
+
+def _serie_numero(frame: pd.DataFrame, columna: str) -> pd.Series:
+    if columna in frame:
+        return pd.to_numeric(frame[columna], errors="coerce")
+    return pd.Series(float("nan"), index=frame.index)
+
+
+def detalle_analisis(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Devuelve (habitaciones, banos, origen_habitaciones, origen_banos) de analisis.
+
+    Reglas, en orden, aplicadas por separado a cada campo:
+    1. Reextraccion desde el texto del anuncio (`*_reextraido`, pagina o titulo).
+    2. Campo publicado por la fuente (`habitaciones`/`banos`).
+    3. Slug del enlace (`*_slug`), escrito por el propio anunciante.
+    Si no hay valor en ninguna fuente el resultado queda vacio; no se imputa.
+
+    Funciona tambien con maestros antiguos sin columnas de reextraccion. La
+    cobertura de la fuente debe seguir midiendo los campos publicados; estas
+    series miden el mejor dato disponible para analizar.
+    """
+    indice = frame.index
+    origen: dict[str, pd.Series] = {}
+    resultado: dict[str, pd.Series] = {}
+    for campo, columnas in {
+        "habitaciones": ("habitaciones_reextraido", "habitaciones", "habitaciones_slug"),
+        "banos": ("banos_reextraido", "banos", "banos_slug"),
+    }.items():
+        reextraido, publicado, slug = (_serie_numero(frame, nombre) for nombre in columnas)
+        valor = reextraido.where(reextraido.notna(), publicado).fillna(slug)
+        etiqueta = pd.Series("", index=indice)
+        etiqueta.loc[reextraido.notna()] = "descripcion_o_titulo"
+        etiqueta.loc[etiqueta.eq("") & publicado.notna()] = "campo_publicado"
+        etiqueta.loc[etiqueta.eq("") & slug.notna()] = "slug"
+        resultado[campo] = valor
+        origen[campo] = etiqueta
+    return resultado["habitaciones"], resultado["banos"], origen["habitaciones"], origen["banos"]

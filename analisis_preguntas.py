@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 
-from precio_moneda import precios_analisis
+from precio_moneda import detalle_analisis, precios_analisis
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -31,18 +31,32 @@ def rank_associations(frame: pd.DataFrame) -> pd.DataFrame:
     if "precio_analisis" not in frame.columns or "moneda_analisis" not in frame.columns:
         # Frames de prueba o maestros antiguos: derivar el precio de analisis aqui.
         frame["precio_analisis"], frame["moneda_analisis"] = precios_analisis(frame)
+    # Habitaciones y banos de analisis (texto del anuncio, campo publicado o slug);
+    # `detalle_analisis` cae al campo publicado si el frame no trae reextraccion.
+    (
+        frame["habitaciones_analisis"],
+        frame["banos_analisis"],
+        _,
+        _,
+    ) = detalle_analisis(frame)
+    # La superficie (m2) queda fuera del analisis: ninguna fuente la publica al
+    # 100% (Revolico y Cubisima 0%, HogarEnCuba ~5%), por lo que solo se reporta
+    # su cobertura como hallazgo comparativo, nunca en estadisticas de precios.
     for (source, currency), group in frame.groupby(["fuente", "moneda_analisis"]):
-        for field in ("habitaciones", "banos", "superficie_m2"):
-            if field not in group:
+        for campo, etiqueta in (
+            ("habitaciones_analisis", "habitaciones"),
+            ("banos_analisis", "banos"),
+        ):
+            if campo not in group:
                 continue
-            pair = group[["precio_analisis", field]].dropna()
-            if len(pair) < 5 or pair[field].nunique() < 2 or pair["precio_analisis"].nunique() < 2:
+            pair = group[["precio_analisis", campo]].dropna()
+            if len(pair) < 5 or pair[campo].nunique() < 2 or pair["precio_analisis"].nunique() < 2:
                 continue
-            coefficient = pair["precio_analisis"].rank().corr(pair[field].rank())
+            coefficient = pair["precio_analisis"].rank().corr(pair[campo].rank())
             rows.append({
                 "fuente": source,
                 "moneda": currency,
-                "variable": field,
+                "variable": etiqueta,
                 "n": len(pair),
                 "spearman_rho": round(float(coefficient), 3),
             })
@@ -57,9 +71,10 @@ def main():
     conversion = pd.read_csv(conversion_path, dtype=str)
 
     master["precio_original"] = pd.to_numeric(master["precio_original"], errors="coerce")
+    # Campos publicados: se conservan solo para la tabla de cobertura.
     master["habitaciones"] = pd.to_numeric(master["habitaciones"], errors="coerce")
     master["banos"] = pd.to_numeric(master["banos"], errors="coerce")
-    master["superficie_m2"] = pd.to_numeric(master["superficie_m2"], errors="coerce")
+    # La superficie (m2) queda fuera del analisis: ninguna fuente la publica al 100%.
     master["moneda"] = master["moneda"].fillna("").astype(str).str.strip().str.upper().replace("", "SIN_MONEDA")
     master["precio_sospechoso"] = clean_boolean(master["precio_sospechoso"])
     # Precio de analisis: prefiere la reextraccion manual y excluye campos sospechosos.
@@ -68,6 +83,14 @@ def main():
     conversion["precio_usd_informal"] = pd.to_numeric(conversion["precio_usd_informal"], errors="coerce")
     conversion["precio_usd_formal"] = pd.to_numeric(conversion["precio_usd_formal"], errors="coerce")
     conversion["moneda"] = conversion["moneda"].fillna("").astype(str).str.strip().str.upper().replace("", "SIN_MONEDA")
+    # Habitaciones y banos de analisis (texto del anuncio, campo publicado o slug);
+    # en maestros antiguos sin esas columnas, `detalle_analisis` cae al publicado.
+    (
+        master["habitaciones_analisis"],
+        master["banos_analisis"],
+        _,
+        _,
+    ) = detalle_analisis(master)
     price_data = master[
         master["precio_analisis"].notna()
         & master["moneda_analisis"].ne("SIN_MONEDA")
@@ -87,9 +110,10 @@ def main():
         precio_disponible=("precio_original", "count"),
         ubicacion_disponible=("ubicacion_raw", "count"),
         ubicacion_analisis=("ubicacion_analisis", lambda s: int(s.fillna("").astype(str).str.strip().ne("").sum())),
-        habitaciones_disponibles=("habitaciones", "count"),
-        banos_disponibles=("banos", "count"),
-        superficie_disponible=("superficie_m2", "count"),
+        habitaciones_publicadas=("habitaciones", "count"),
+        habitaciones_analisis=("habitaciones_analisis", "count"),
+        banos_publicados=("banos", "count"),
+        banos_analisis=("banos_analisis", "count"),
         fecha_publicacion=("fecha_publicacion", "count"),
         fecha_reextraida=("fecha_reextraida", lambda s: int(s.fillna("").astype(str).str.strip().ne("").sum())),
     ).reset_index()
@@ -152,12 +176,12 @@ def main():
     else:
         lines.append("No hay pares completos suficientes para estimar asociaciones.")
     lines.append("")
-    hab = price_data[price_data["habitaciones"].notna()].groupby(["fuente", "moneda_analisis", "habitaciones"])["precio_analisis"].agg(["count", "median"]).reset_index()
-    lines.append("Medianas observadas por cantidad de habitaciones:")
+    hab = price_data[price_data["habitaciones_analisis"].notna()].groupby(["fuente", "moneda_analisis", "habitaciones_analisis"])["precio_analisis"].agg(["count", "median"]).reset_index()
+    lines.append("Medianas observadas por cantidad de habitaciones (mejor dato disponible: texto del anuncio, campo publicado o enlace):")
     lines.append(hab.to_markdown(index=False) if not hab.empty else "Sin pares completos.")
     lines.append("")
-    baths = price_data[price_data["banos"].notna()].groupby(["fuente", "moneda_analisis", "banos"])["precio_analisis"].agg(["count", "median"]).reset_index()
-    lines.append("Medianas observadas por cantidad de banos:")
+    baths = price_data[price_data["banos_analisis"].notna()].groupby(["fuente", "moneda_analisis", "banos_analisis"])["precio_analisis"].agg(["count", "median"]).reset_index()
+    lines.append("Medianas observadas por cantidad de banos (mejor dato disponible: texto del anuncio, campo publicado o enlace):")
     lines.append(baths.to_markdown(index=False) if not baths.empty else "Sin pares completos.")
     lines.append("")
 
@@ -185,7 +209,8 @@ def main():
     by_channel = price_data.groupby(["canal", "moneda_analisis"]).agg(
         anuncios=("precio_analisis", "count"),
         mediana_precio=("precio_analisis", "median"),
-        metricas_m2=("superficie_m2", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
+        con_habitaciones=("habitaciones_analisis", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
+        con_banos=("banos_analisis", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
         fecha_pct=("fecha_publicacion", lambda s: round(100 * pd.notna(s).mean(), 1)),
     ).reset_index()
     lines.append(by_channel.to_markdown(index=False))
@@ -242,10 +267,11 @@ def main():
         lines.append(
             "El script `clustering_viviendas.py` aplica k-means (k=3) por separado a cada moneda "
             "con al menos 30 observaciones, sobre el precio de analisis (que prefiere la reextraccion "
-            "manual y excluye precios sospechosos), habitaciones y banos. "
+            "manual y excluye precios sospechosos), habitaciones y banos (mejor dato disponible: "
+            "texto del anuncio, campo publicado o enlace). "
             f"Resultado vigente: `{latest_cluster.name}` con {grupos} grupos por moneda ({detalle}). "
             "Los centros estan en `centroides_clusters_*.csv`. "
-            "Revolico queda fuera por no tener banos y EUR por tener pocas observaciones."
+            "Solo entran las monedas con 30 o mas observaciones completas; el resto se excluye y se anota."
         )
     else:
         lines.append(
@@ -269,6 +295,9 @@ def main():
         fecha_reextraida = int(revolico["fecha_reextraida"].fillna("").astype(str).str.strip().ne("").sum())
         estado = revolico["estado_anuncio"].fillna("").astype(str).str.strip()
         borrados = int(estado.str.startswith("anuncio_inexistente").sum() + estado.eq("despublicado").sum())
+        hab_analisis = int(pd.to_numeric(revolico.get("habitaciones_analisis"), errors="coerce").notna().sum())
+        banos_analisis = int(pd.to_numeric(revolico.get("banos_analisis"), errors="coerce").notna().sum())
+        publicados = int(estado.eq("publicado").sum())
         lines.append(
             f"- Municipio en Revolico: el campo publicado lo cubre {municipio_campo} de {total_revolico} "
             f"anuncios; la pagina del anuncio eleva la cobertura de analisis a {municipio_analisis}."
@@ -277,13 +306,25 @@ def main():
             f"- Fecha en Revolico: el campo publicado no la tiene; la pagina del anuncio aporta "
             f"`updatedOnByUser` en {fecha_reextraida} anuncios, que es fecha de actualizacion, no de creacion."
         )
+        lines.append(
+            f"- Habitaciones y banos en Revolico: se leen del texto del anuncio (descripcion, titulo y "
+            f"enlace) ademas del campo publicado. El mejor dato disponible cubre {hab_analisis} de "
+            f"{total_revolico} anuncios en habitaciones y {banos_analisis} en banos. El techo lo fija el "
+            f"propio texto: {borrados} anuncios ya no estan accesibles y no tienen descripcion, y otros "
+            f"anuncios publicados simplemente no mencionan la cantidad. No se imputa nada."
+        )
         if borrados:
             lines.append(
-                f"- Sesion de disponibilidad: {borrados} anuncios de Revolico ya no estan accesibles al "
-                "consultar la pagina (despublicados o borrados); no se descartan, pero no pueden verificarse."
+                f"- Sesion de disponibilidad: {borrados} anuncios de Revolico ({publicados} siguen "
+                "publicados) devolvieron un error de pagina al consultarlos el 2026-10-18; aun aparecian "
+                "en el listado guardado del 2026-09-29, por lo que la desaparicion esta acotada a esa "
+                "ventana. No se descartan: quedan marcados con su ventana y su justificacion."
             )
-    lines.append("- Habitaciones y banos en Revolico: se extraen del titulo de la tarjeta; la pagina del anuncio no aporta campos estructurados de habitaciones, solo el texto de la descripcion.")
-    lines.append("- m2 casi inexistente fuera de HogarEnCuba.")
+    lines.append(
+        "- m2 excluido del analisis: ninguna fuente lo publica de forma sistemática (Revolico y Cubisima "
+        "0%, HogarEnCuba ~5%); la columna se conserva en el maestro solo como traza de origen y su "
+        "cobertura se reporta como hallazgo comparativo, no como variable explicativa."
+    )
     lines.append("- El listado de Revolico esta bloqueado para scraping automatico; se usa HTML guardado.")
     lines.append("- Tasas online bloqueadas; se usa registro manual auditable.")
     lines.append("")
@@ -298,7 +339,8 @@ def main():
     )
     lines.append(
         "La asociacion entre caracteristicas y precio puede explorarse en los subconjuntos con observaciones completas; "
-        "no describe causalidad y puede estar sesgada por la falta de superficie y otras variables."
+        "no describe causalidad y puede estar sesgada por la cobertura parcial de habitaciones y banos y por la ausencia "
+        "de superficie utilizable."
     )
     lines.append(
         "La interpretacion de la presion migratoria, motivos de venta y negociacion queda deliberadamente abierta "

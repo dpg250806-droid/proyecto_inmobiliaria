@@ -10,12 +10,24 @@ import pandas as pd
 
 from clustering_viviendas import kmeans
 from comparativo_fuentes import channel_summary, prepare, summary_table
-from integrar_fuentes import aplicar_metadatos_revolico, aplicar_veredictos_revision, parsear_fecha_exacta
+from extraer_detalle_anuncios_revolico import (
+    PATRONES_BANO,
+    PATRONES_HABITACION,
+    extraer_cantidad,
+    procesar,
+    slug_desde_url,
+)
+from integrar_fuentes import (
+    aplicar_detalle_anuncios,
+    aplicar_metadatos_revolico,
+    aplicar_veredictos_revision,
+    parsear_fecha_exacta,
+)
 from convertir_precios_tasas import convertir, latest_rate_file
 from extraer_metadatos_revolico import buscar_municipio_en_texto, parsear_pagina_anuncio
 from integrar_fuentes import hogarencuba_source_path
 from analisis_preguntas import rank_associations
-from precio_moneda import extraer_precio_moneda, normalizar_moneda, parsear_importe, precios_analisis
+from precio_moneda import detalle_analisis, extraer_precio_moneda, normalizar_moneda, parsear_importe, precios_analisis
 from reprocesar_cubisima import reprocesar
 from reprocesar_hogarencuba import latest_source, revalidar
 from scraper_cubisima_online import (
@@ -691,6 +703,127 @@ class MetadatosRevolicoTests(unittest.TestCase):
         ubicacion, origen = ubicacion_analisis(frame)
         self.assertEqual(ubicacion.tolist(), ["Plaza", "Plaza", "Nuevo Vedado", ""])
         self.assertEqual(origen.tolist(), ["pagina_anuncio", "pagina_anuncio", "campo_publicado", "sin_dato"])
+
+
+class DetalleAnunciosRevolicoTests(unittest.TestCase):
+    """Extraccion de habitaciones y banos del texto de cada anuncio de Revolico."""
+
+    def cantidad(self, texto, patrones):
+        valor, _, _ = extraer_cantidad(texto, patrones)
+        return valor
+
+    def test_digitos_y_palabras_en_descripcion(self):
+        self.assertEqual(self.cantidad("Apartamento con 3 cuartos y 2 banos", PATRONES_HABITACION), 3.0)
+        self.assertEqual(self.cantidad("Apartamento con 3 cuartos y 2 banos", PATRONES_BANO), 2.0)
+        self.assertEqual(self.cantidad("Un cuarto y un bano", PATRONES_HABITACION), 1.0)
+        self.assertEqual(self.cantidad("Un cuarto y un bano", PATRONES_BANO), 1.0)
+        self.assertEqual(self.cantidad("Dos dormitorios", PATRONES_HABITACION), 2.0)
+        self.assertEqual(self.cantidad("4 hab", PATRONES_HABITACION), 4.0)
+
+    def test_banos_con_fraccion(self):
+        self.assertEqual(self.cantidad("2 banos y medio", PATRONES_BANO), 2.5)
+        self.assertEqual(self.cantidad("Tiene medio bano social", PATRONES_BANO), 0.5)
+        # El patron simple no debe duplicar el "2" del caso "y medio" como conflicto.
+        valor, _, todos = extraer_cantidad("2 banos y medio", PATRONES_BANO)
+        self.assertEqual(valor, 2.5)
+        self.assertEqual(todos, [2.5])
+
+    def test_notacion_habanera_y_slug(self):
+        # "apto 2/4" son 2 dormitorios; el segundo numero es el total de cuartos.
+        self.assertEqual(self.cantidad("Apto 2/4 en Nuevo Vedado", PATRONES_HABITACION), 2.0)
+        slug = slug_desde_url("https://www.revolico.com/item/apto-3-cuartos-nuevo-vedado-12345678")
+        self.assertEqual(slug, "apto 3 cuartos nuevo vedado")
+        self.assertEqual(self.cantidad(slug, PATRONES_HABITACION), 3.0)
+
+    def test_sin_mencion_no_se_imputa(self):
+        self.assertIsNone(self.cantidad("Amplio y luminoso", PATRONES_HABITACION))
+        self.assertIsNone(self.cantidad("", PATRONES_BANO))
+        self.assertIsNone(self.cantidad("Tiene garaje", PATRONES_BANO))
+
+    def test_conflicto_titulo_vs_descripcion_se_marca_sin_resolver(self):
+        from types import SimpleNamespace
+        fila = SimpleNamespace(
+            titulo="Casa 3 cuartos",
+            descripcion="Dispone de 5 cuartos y 2 banos",
+            url="https://www.revolico.com/item/casa-12345678",
+        )
+        resultado = procesar(fila)
+        # Gana la primera aparicion explicita (descripcion); el conflicto queda marcado.
+        self.assertEqual(resultado["habitaciones_descripcion"], 5.0)
+        self.assertEqual(resultado["habitaciones_titulo"], 3.0)
+        self.assertIn("habitaciones titulo=3 descripcion=5", resultado["conflicto_detalle"])
+
+    def test_aplicar_detalle_anuncios_prefiere_descripcion_y_documenta_borrados(self):
+        frame = pd.DataFrame(
+            [
+                {"url": "https://revolico.com/item/a", "habitaciones": np.nan, "banos": np.nan},
+                {"url": "https://revolico.com/item/b", "habitaciones": np.nan, "banos": np.nan},
+                {"url": "https://revolico.com/item/c", "habitaciones": np.nan, "banos": np.nan},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            ruta = Path(folder) / "detalle_anuncios_revolico_20261018_000000.csv"
+            pd.DataFrame(
+                [
+                    {"url": "https://revolico.com/item/a", "estado": "publicado",
+                     "habitaciones_descripcion": "3", "banos_descripcion": "2",
+                     "habitaciones_slug": "", "banos_slug": "",
+                     "evidencia_detalle": "habitaciones='3 cuartos'", "conflicto_detalle": "",
+                     "fecha_snapshot_listado": "2026-09-29", "fecha_extraccion": "2026-10-18 12:00:00"},
+                    {"url": "https://revolico.com/item/b",
+                     "estado": "anuncio_inexistente_unpublished-ad",
+                     "habitaciones_descripcion": "", "banos_descripcion": "",
+                     "habitaciones_slug": "4", "banos_slug": "",
+                     "evidencia_detalle": "", "conflicto_detalle": "",
+                     "fecha_snapshot_listado": "2026-09-29", "fecha_extraccion": "2026-10-18 12:00:00"},
+                ]
+            ).to_csv(ruta, index=False)
+            resultado = aplicar_detalle_anuncios(frame, ruta)
+        # El anuncio publicado toma el valor de la descripcion.
+        self.assertEqual(float(resultado.loc[0, "habitaciones_reextraido"]), 3.0)
+        self.assertEqual(float(resultado.loc[0, "banos_reextraido"]), 2.0)
+        self.assertEqual(resultado.loc[0, "evidencia_detalle"], "habitaciones='3 cuartos'")
+        # El borrado conserva su slug y documenta la ventana de desaparicion.
+        self.assertEqual(float(resultado.loc[1, "habitaciones_slug"]), 4.0)
+        self.assertEqual(resultado.loc[1, "ventana_despublicacion"], "2026-09-29 a 2026-10-18")
+        self.assertIn("aparecia en el listado guardado del 2026-09-29", resultado.loc[1, "justificacion_disponibilidad"])
+        # El anuncio sin fila de detalle queda vacio, sin ventana ni imputacion.
+        self.assertEqual(resultado.loc[2, "ventana_despublicacion"], "")
+        self.assertTrue(pd.isna(resultado.loc[2, "habitaciones_reextraido"]))
+
+
+class DetalleAnalisisTests(unittest.TestCase):
+    """Regla de precedence: texto del anuncio, campo publicado, enlace (slug)."""
+
+    def test_prefiere_descripcion_luego_publicado_luego_slug(self):
+        frame = pd.DataFrame(
+            [
+                {"habitaciones_reextraido": 3.0, "habitaciones": np.nan, "habitaciones_slug": 5.0,
+                 "banos_reextraido": 2.0, "banos": np.nan, "banos_slug": np.nan},
+                {"habitaciones_reextraido": np.nan, "habitaciones": 2.0, "habitaciones_slug": 5.0,
+                 "banos_reextraido": np.nan, "banos": 1.0, "banos_slug": np.nan},
+                {"habitaciones_reextraido": np.nan, "habitaciones": np.nan, "habitaciones_slug": 4.0,
+                 "banos_reextraido": np.nan, "banos": np.nan, "banos_slug": 1.0},
+                {"habitaciones_reextraido": np.nan, "habitaciones": np.nan, "habitaciones_slug": np.nan,
+                 "banos_reextraido": np.nan, "banos": np.nan, "banos_slug": np.nan},
+            ]
+        )
+        hab, banos, origen_hab, origen_ban = detalle_analisis(frame)
+        self.assertEqual(hab.tolist()[:3], [3.0, 2.0, 4.0])
+        self.assertTrue(pd.isna(hab.tolist()[3]))
+        self.assertEqual(banos.tolist()[:3], [2.0, 1.0, 1.0])
+        self.assertTrue(pd.isna(banos.tolist()[3]))
+        self.assertEqual(origen_hab.tolist(), ["descripcion_o_titulo", "campo_publicado", "slug", ""])
+        self.assertEqual(origen_ban.tolist(), ["descripcion_o_titulo", "campo_publicado", "slug", ""])
+
+    def test_sin_columnas_de_reextraccion_usa_el_campo_publicado(self):
+        # Maestros antiguos y frames de prueba no traen columnas de reextraccion.
+        frame = pd.DataFrame([{"habitaciones": 2.0, "banos": 1.0}])
+        hab, banos, origen_hab, origen_ban = detalle_analisis(frame)
+        self.assertEqual(float(hab.iloc[0]), 2.0)
+        self.assertEqual(float(banos.iloc[0]), 1.0)
+        self.assertEqual(origen_hab.iloc[0], "campo_publicado")
+        self.assertEqual(origen_ban.iloc[0], "campo_publicado")
 
 
 if __name__ == "__main__":
