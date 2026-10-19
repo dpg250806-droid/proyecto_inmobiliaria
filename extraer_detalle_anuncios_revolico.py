@@ -142,16 +142,22 @@ def procesar(fila) -> dict:
 
     hab_desc, ev_hab_desc, vals_hab_desc = extraer_cantidad(descripcion, PATRONES_HABITACION)
     ban_desc, ev_ban_desc, vals_ban_desc = extraer_cantidad(descripcion, PATRONES_BANO)
-    hab_titulo, _, vals_hab_titulo = extraer_cantidad(titulo, PATRONES_HABITACION)
-    ban_titulo, _, vals_ban_titulo = extraer_cantidad(titulo, PATRONES_BANO)
+    hab_titulo, ev_hab_titulo, vals_hab_titulo = extraer_cantidad(titulo, PATRONES_HABITACION)
+    ban_titulo, ev_ban_titulo, vals_ban_titulo = extraer_cantidad(titulo, PATRONES_BANO)
     hab_slug, _, vals_hab_slug = extraer_cantidad(slug, PATRONES_HABITACION)
     ban_slug, _, vals_ban_slug = extraer_cantidad(slug, PATRONES_BANO)
 
+    # Evidencia por campo: la descripcion manda; si no menciona la cantidad, el
+    # titulo del propio anuncio ("Apto 1/4 ...") aporta el valor con su cita.
     evidencia = []
     if ev_hab_desc:
         evidencia.append(f"habitaciones='{ev_hab_desc}'")
+    elif ev_hab_titulo and hab_titulo is not None:
+        evidencia.append(f"habitaciones_titulo='{ev_hab_titulo}'")
     if ev_ban_desc:
         evidencia.append(f"banos='{ev_ban_desc}'")
+    elif ev_ban_titulo and ban_titulo is not None:
+        evidencia.append(f"banos_titulo='{ev_ban_titulo}'")
 
     conflictos = []
     if hab_desc is not None and hab_titulo is not None and hab_desc != hab_titulo:

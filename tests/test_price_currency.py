@@ -21,7 +21,15 @@ from integrar_fuentes import (
     aplicar_detalle_anuncios,
     aplicar_metadatos_revolico,
     aplicar_veredictos_revision,
+    clasificar_tipo_vivienda,
+    excluir_no_residenciales,
     parsear_fecha_exacta,
+)
+from revisar_precios_ausentes import (
+    aplicar_politica_consulta,
+    candidatos_de_texto,
+    candidatos_de_url,
+    resolver,
 )
 from convertir_precios_tasas import convertir, latest_rate_file
 from extraer_metadatos_revolico import buscar_municipio_en_texto, parsear_pagina_anuncio
@@ -456,9 +464,10 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         self.assertEqual(resultado.loc[0, "veredicto_revision"], "error")
         self.assertTrue(bool(resultado.loc[1, "precio_sospechoso"]))
         self.assertEqual(resultado.loc[1, "veredicto_revision"], "producto")
-        # veredicto "venta" no excluye y no cambia el flag
+        # El veredicto "venta" queda registrado como revision, pero no excluye
+        # el precio ni marca el anuncio como sospechoso.
         self.assertFalse(bool(resultado.loc[2, "precio_sospechoso"]))
-        self.assertEqual(resultado.loc[2, "veredicto_revision"], "")
+        self.assertEqual(resultado.loc[2, "veredicto_revision"], "venta")
 
     def test_veredictos_vacios_no_modifican_el_maestro(self):
         frame = pd.DataFrame([{"url": "https://ejemplo/a", "precio_sospechoso": False}])
@@ -509,6 +518,47 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         self.assertEqual(float(precio.loc[0]), 18000.0)
         self.assertEqual(moneda.loc[0], "USD")
         self.assertTrue(pd.isna(precio.loc[1]))
+
+    def test_listas_adicionales_aportan_precio_sin_pisar_veredicto_manual(self):
+        frame = pd.DataFrame(
+            [
+                {"url": "https://ejemplo/a", "precio_sospechoso": False},
+                {"url": "https://ejemplo/b", "precio_sospechoso": False},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            manual = Path(folder) / "precios_bajos.csv"
+            ausentes = Path(folder) / "precios_ausentes.csv"
+            pd.DataFrame(
+                [
+                    {"url": "https://ejemplo/a", "veredicto": "no_verificable",
+                     "precio_en_descripcion": "", "moneda_en_descripcion": "",
+                     "observacion": "revision manual: sin precio"},
+                ]
+            ).to_csv(manual, index=False)
+            pd.DataFrame(
+                [
+                    {"url": "https://ejemplo/a", "veredicto": "precio_recuperado",
+                     "precio_en_descripcion": "45000", "moneda_en_descripcion": "USD",
+                     "observacion": "descripcion: 'Precio: 45.000 USD'"},
+                    {"url": "https://ejemplo/b", "veredicto": "sin_precio_en_fuente",
+                     "precio_en_descripcion": "", "moneda_en_descripcion": "",
+                     "observacion": "pagina: Sin precio"},
+                ]
+            ).to_csv(ausentes, index=False)
+            resultado = aplicar_veredictos_revision(frame, manual, adicionales=[ausentes])
+        # La lista posterior aporta el precio recuperado como reextraccion...
+        self.assertEqual(float(resultado.loc[0, "precio_reextraido"]), 45000.0)
+        self.assertEqual(resultado.loc[0, "moneda_reextraida"], "USD")
+        # ...pero el veredicto de la revision manual original se conserva.
+        self.assertEqual(resultado.loc[0, "veredicto_revision"], "no_verificable")
+        self.assertTrue(bool(resultado.loc[0, "precio_sospechoso"]))
+        # El veredicto de la lista adicional tambien queda registrado y no excluye.
+        self.assertEqual(resultado.loc[1, "veredicto_revision"], "sin_precio_en_fuente")
+        self.assertFalse(bool(resultado.loc[1, "precio_sospechoso"]))
+        precio, moneda = precios_analisis(resultado)
+        self.assertEqual(float(precio.loc[0]), 45000.0)
+        self.assertEqual(moneda.loc[0], "USD")
 
     def test_precios_analisis_prefiere_reextraccion_y_excluye_sospechosos(self):
         frame = pd.DataFrame(
@@ -759,6 +809,7 @@ class DetalleAnunciosRevolicoTests(unittest.TestCase):
                 {"url": "https://revolico.com/item/a", "habitaciones": np.nan, "banos": np.nan},
                 {"url": "https://revolico.com/item/b", "habitaciones": np.nan, "banos": np.nan},
                 {"url": "https://revolico.com/item/c", "habitaciones": np.nan, "banos": np.nan},
+                {"url": "https://revolico.com/item/d", "habitaciones": np.nan, "banos": np.nan},
             ]
         )
         with tempfile.TemporaryDirectory() as folder:
@@ -776,6 +827,12 @@ class DetalleAnunciosRevolicoTests(unittest.TestCase):
                      "habitaciones_slug": "4", "banos_slug": "",
                      "evidencia_detalle": "", "conflicto_detalle": "",
                      "fecha_snapshot_listado": "2026-09-29", "fecha_extraccion": "2026-10-18 12:00:00"},
+                    {"url": "https://revolico.com/item/d", "estado": "publicado",
+                     "habitaciones_descripcion": "", "banos_descripcion": "",
+                     "habitaciones_titulo": "1", "banos_titulo": "",
+                     "habitaciones_slug": "", "banos_slug": "",
+                     "evidencia_detalle": "habitaciones_titulo='1/4'", "conflicto_detalle": "",
+                     "fecha_snapshot_listado": "2026-09-29", "fecha_extraccion": "2026-10-18 12:00:00"},
                 ]
             ).to_csv(ruta, index=False)
             resultado = aplicar_detalle_anuncios(frame, ruta)
@@ -790,6 +847,11 @@ class DetalleAnunciosRevolicoTests(unittest.TestCase):
         # El anuncio sin fila de detalle queda vacio, sin ventana ni imputacion.
         self.assertEqual(resultado.loc[2, "ventana_despublicacion"], "")
         self.assertTrue(pd.isna(resultado.loc[2, "habitaciones_reextraido"]))
+        # Si la descripcion no menciona la cantidad, manda el titulo del anuncio
+        # y la evidencia indica el campo de origen.
+        self.assertEqual(float(resultado.loc[3, "habitaciones_reextraido"]), 1.0)
+        self.assertEqual(resultado.loc[3, "evidencia_detalle"], "habitaciones_titulo='1/4'")
+        self.assertEqual(resultado.loc[3, "ventana_despublicacion"], "")
 
 
 class DetalleAnalisisTests(unittest.TestCase):
@@ -824,6 +886,140 @@ class DetalleAnalisisTests(unittest.TestCase):
         self.assertEqual(float(banos.iloc[0]), 1.0)
         self.assertEqual(origen_hab.iloc[0], "campo_publicado")
         self.assertEqual(origen_ban.iloc[0], "campo_publicado")
+
+
+class ExclusionNoResidencialesTests(unittest.TestCase):
+    """Los anuncios que no son vivienda en venta se apartan sin destruirlos."""
+
+    def test_excluye_productos_permutas_y_conserva_las_viviendas(self):
+        frame = pd.DataFrame(
+            [
+                {"url": "https://ejemplo/vivienda", "veredicto_revision": ""},
+                {"url": "https://ejemplo/producto", "veredicto_revision": "producto"},
+                {"url": "https://ejemplo/permuta", "veredicto_revision": "permuta"},
+                {"url": "https://ejemplo/local", "veredicto_revision": "otro"},
+                {"url": "https://ejemplo/borrado", "veredicto_revision": "despublicado"},
+            ]
+        )
+        limpio, excluidos = excluir_no_residenciales(frame)
+        self.assertEqual(len(limpio), 2)
+        self.assertEqual(excluidos["veredicto_revision"].tolist(), ["producto", "permuta", "otro"])
+        # Los borrados y el resto de anuncios permanecen en el dataset.
+        self.assertIn("https://ejemplo/borrado", set(limpio["url"]))
+        self.assertIn("https://ejemplo/vivienda", set(limpio["url"]))
+        # Nada se destruye: los excluidos conservan todas sus columnas.
+        self.assertEqual(len(excluidos.columns), len(frame.columns))
+
+    def test_frames_sin_veredicto_no_pierden_filas(self):
+        frame = pd.DataFrame([{"url": "https://ejemplo/a"}])
+        limpio, excluidos = excluir_no_residenciales(frame)
+        self.assertEqual(len(limpio), 1)
+        self.assertTrue(excluidos.empty)
+
+
+class TipoViviendaTests(unittest.TestCase):
+    """El tipo de vivienda no se toma de la primera palabra del titulo."""
+
+    def test_no_confunde_precio_o_telefono_con_tipo(self):
+        self.assertEqual(clasificar_tipo_vivienda("30.000 USD Casa en el Vedado"), "casa")
+        self.assertEqual(clasificar_tipo_vivienda("8.500 USD Apto 2/4 Centro Habana"), "apartamento")
+        self.assertEqual(clasificar_tipo_vivienda("Vendo penthouse en Miramar"), "penthouse")
+        self.assertEqual(clasificar_tipo_vivienda("Gestionamos la venta de tu vivienda"), "no_clasificado")
+        self.assertIsNone(clasificar_tipo_vivienda(""))
+        self.assertIsNone(clasificar_tipo_vivienda(None))
+        self.assertTrue(pd.isna(clasificar_tipo_vivienda(np.nan)))
+
+
+class PreciosAusentesTests(unittest.TestCase):
+    """Recuperacion conservadora de precios en texto (revisar_precios_ausentes)."""
+
+    def resolver_texto(self, texto, publicado=None):
+        candidatos, rechazados = candidatos_de_texto(texto, "descripcion")
+        return resolver(candidatos, rechazados, publicado)
+
+    def test_recupera_un_unico_precio_explicito(self):
+        veredicto, precio, moneda, _ = self.resolver_texto(
+            "Se vende casa, precio: $ 5000 USD (Se acepta el pago aqui)"
+        )
+        self.assertEqual(veredicto, "precio_recuperado")
+        self.assertEqual(precio, 5000.0)
+        self.assertEqual(moneda, "USD")
+
+    def test_dolares_solo_con_signo_no_basta_porque_puede_ser_cuc(self):
+        veredicto, precio, _, _ = self.resolver_texto("Casa precio $ 45.000, se negocia")
+        self.assertEqual(veredicto, "moneda_ambigua")
+        self.assertIsNone(precio)
+
+    def test_siete_digitos_sin_separador_se_toma_como_telefono(self):
+        veredicto, precio, _, detalle = self.resolver_texto("Llamar al 4328353 usd o euros")
+        self.assertEqual(veredicto, "solo_coincidencias_tipograficas")
+        self.assertIsNone(precio)
+        self.assertIn("telefono", detalle)
+
+    def test_varios_importes_distintos_quedan_ambiguos(self):
+        veredicto, precio, _, detalle = self.resolver_texto("Vendo en 45.000 USD o 50.000 USD")
+        self.assertEqual(veredicto, "ambiguo")
+        self.assertIsNone(precio)
+        self.assertIn("45000 USD", detalle)
+        self.assertIn("50000 USD", detalle)
+
+    def test_no_aplica_valores_fuera_de_rango_ni_cup_sin_validar(self):
+        veredicto, _, _, _ = self.resolver_texto("Casa por 1 USD")
+        self.assertEqual(veredicto, "valor_improbable")
+        veredicto, _, _, _ = self.resolver_texto("Apartamento 25.000 cup")
+        self.assertEqual(veredicto, "cup_requiere_validacion")
+        veredicto, _, _, _ = self.resolver_texto("Precio 80.000 mlc")
+        self.assertEqual(veredicto, "moneda_sin_tasa")
+
+    def test_no_repara_con_el_mismo_valor_sospechoso_del_campo_publicado(self):
+        veredicto, precio, _, detalle = self.resolver_texto("Vendo casa en 10 USD", publicado=10.0)
+        self.assertEqual(veredicto, "solo_coincide_con_publicado")
+        self.assertIsNone(precio)
+        self.assertIn("publicado", detalle)
+
+    def test_precio_en_url_de_cubisima(self):
+        candidatos, _ = candidatos_de_url(
+            "https://www.cubisima.com/casas/casa-de-1-cuarto-10-cuc-en-calle-86!504281.htm"
+        )
+        self.assertEqual([(c["valor"], c["moneda"]) for c in candidatos], [(10.0, "CUC")])
+        # Las URLs numericas de Revolico no contienen precio.
+        candidatos, _ = candidatos_de_url("https://www.revolico.com/item/vendo-casa-56750346")
+        self.assertEqual(candidatos, [])
+
+    def test_politica_de_consulta_no_confunde_falla_con_ausencia(self):
+        # Pagina consultada y viva (Revolico responde 'published'): si no cita
+        # precio, la ausencia se afirma con evidencia.
+        for estado in ("published", "publicado"):
+            veredicto, _ = aplicar_politica_consulta(
+                "sin_precio_en_texto", "x", True, estado, False
+            )
+            self.assertEqual(veredicto, "sin_precio_en_texto")
+        # HTTP que no responde: jamas se afirma que el precio no existe.
+        for estado in ("http_403", "error_http", "http_500"):
+            veredicto, detalle = aplicar_politica_consulta(
+                "sin_precio_en_texto", "x", True, estado, False
+            )
+            self.assertEqual(veredicto, "consulta_fallida")
+            self.assertIn(estado, detalle)
+        # Sin red, sin consulta y sin anuncio: los otros tres veredictos.
+        self.assertEqual(
+            aplicar_politica_consulta("sin_precio_en_texto", "x", True, "no_consultado_sin_red", False)[0],
+            "no_consultado_sin_red",
+        )
+        self.assertEqual(
+            aplicar_politica_consulta(
+                "sin_precio_en_texto", "x", True, "anuncio_inexistente_cant-see-deleted-ad", False
+            )[0],
+            "anuncio_no_disponible",
+        )
+        self.assertEqual(
+            aplicar_politica_consulta("sin_precio_en_texto", "x", False, "no_aplica", True)[0],
+            "anuncio_no_disponible",
+        )
+        # Los veredictos distintos de "sin_precio_en_texto" no se tocan.
+        self.assertEqual(
+            aplicar_politica_consulta("ambiguo", "x", True, "http_403", False)[0], "ambiguo"
+        )
 
 
 if __name__ == "__main__":

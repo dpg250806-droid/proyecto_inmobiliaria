@@ -66,6 +66,30 @@ def normalizar_zona(value):
     return text
 
 
+def clasificar_tipo_vivienda(titulo) -> str | None:
+    """Clasifica el tipo de vivienda a partir del titulo completo de Revolico.
+
+    El CSV de Revolico no trae columna de tipo. Antes se usaba la primera
+    palabra del titulo, lo que convertia precios ("30.000 USD ...") y
+    telefonos en tipos de vivienda; ahora se buscan palabras clave en todo
+    el titulo con la misma precedencia que `limpiar_revolico.py`
+    (penthouse > casa > apartamento/apto) y, si no hay titulo o no se
+    reconoce el tipo, se devuelve `None`/`no_clasificado` sin inventar datos.
+    """
+    if titulo is None or pd.isna(titulo):
+        return None
+    texto = str(titulo).strip().lower()
+    if not texto:
+        return None
+    if "penthouse" in texto:
+        return "penthouse"
+    if re.search(r"\bcasa\b", texto):
+        return "casa"
+    if re.search(r"apart|apto", texto):
+        return "apartamento"
+    return "no_clasificado"
+
+
 def normalizar_precio(value, moneda) -> tuple[float | None, bool]:
     """Devuelve (precio_numerico, sospechoso) sin borrar valores atipicos."""
     if pd.isna(value):
@@ -111,7 +135,7 @@ def dataframe_revolico(path: Path) -> pd.DataFrame:
                 "id_local": f"rev_{idx + 1:06d}_{pd.notna(item.get('url')) and item['url'][:60] or idx}",
                 "titulo": normalizar_texto(item.get("titulo", "")),
                 "url": normalizar_texto(item.get("url", "")),
-                "tipo_vivienda": (str(item.get("titulo", "")).strip().split()[0].lower() if pd.notna(item.get("titulo", "")) and str(item.get("titulo", "")).strip() else None),
+                "tipo_vivienda": clasificar_tipo_vivienda(item.get("titulo", None)),
                 "ubicacion_raw": normalizar_texto(item.get("municipio", None)),
                 "zona_normalizada": normalizar_zona(item.get("municipio", None)),
                 "habitaciones": pd.to_numeric(item.get("habitaciones", None), errors="coerce"),
@@ -271,60 +295,127 @@ VEREDICTOS_EXCLUYENTES = {
     "producto",
 }
 
+# Veredictos que identifican anuncios que no son venta de vivienda:
+# productos, permutas (cambio, no venta), locales u otros inmuebles no
+# residenciales y alquileres. El scraper del proyecto describe el mercado
+# residencial en venta, asi que estos anuncios se excluyen del dataset.
+NO_RESIDENCIALES = {"alquiler", "otro", "permuta", "producto"}
+
+
+def excluir_no_residenciales(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Separa los anuncios que no son vivienda en venta (no destructivo).
+
+    Devuelve `(dataset_sin_no_residenciales, excluidos)`. Los excluidos no se
+    destruyen: van a `outputs/integracion/anuncios_no_residenciales_<fecha>.csv`
+    con su veredicto y su evidencia, para que la exclusion sea auditable. El
+    resto de anuncios conserva intactas todas sus columnas.
+    """
+    if "veredicto_revision" not in frame.columns:
+        return frame, frame.iloc[0:0]
+    mascara = frame["veredicto_revision"].fillna("").astype(str).str.strip().str.lower().isin(NO_RESIDENCIALES)
+    return frame.loc[~mascara].copy(), frame.loc[mascara].copy()
+
+
+RUTAS_REVISION_POR_DEFECTO = (
+    REPO_ROOT / "revision_manual" / "precios_bajos.csv",
+    REPO_ROOT / "revision_manual" / "precios_ausentes.csv",
+)
+
 
 def aplicar_veredictos_revision(
-    frame: pd.DataFrame, ruta: Path = REPO_ROOT / "revision_manual" / "precios_bajos.csv"
+    frame: pd.DataFrame, ruta: Path | None = None, adicionales: list[Path] | None = None
 ) -> pd.DataFrame:
-    """Aplica la revision manual de precios bajos sobre el maestro.
+    """Aplica las revisiones de precios sobre el maestro (no destructivo).
 
-    Los anuncios con veredicto excluyente quedan marcados como `precio_sospechoso` y
-    conservan su veredicto en `veredicto_revision`. Cuando la revision trajo un precio
-    verificado en la descripcion o en el titulo, se registra en `precio_reextraido` con
-    su moneda y su evidencia. No se borra ni se corrige ningun valor original: quien
-    decide que valor se analiza es `precio_analisis` (ver `precios_analisis`).
+    Lee una o varias listas de revision: por defecto `revision_manual/precios_bajos.csv`
+    (revision uno a uno de precios bajos) y `revision_manual/precios_ausentes.csv`
+    (recuperacion de precios en texto y consulta de paginas sin precio); o los
+    archivos que se pasen en `ruta` y `adicionales`.
+
+    Por cada anuncio revisado:
+    - registra su veredicto en `veredicto_revision` (si varias listas lo
+      informan, gana la primera: asi se conserva la revision manual original);
+    - marca `precio_sospechoso` solo si el veredicto esta en
+      `VEREDICTOS_EXCLUYENTES`;
+    - si la revision trajo un precio verificado en la descripcion o en el
+      titulo, lo registra en `precio_reextraido` con su moneda y su evidencia.
+
+    No se borra ni se corrige ningun valor original: quien decide que valor se
+    analiza es `precio_analisis` (ver `precios_analisis`).
     """
+    if ruta is None:
+        rutas = [archivo for archivo in RUTAS_REVISION_POR_DEFECTO if archivo.exists()]
+        rutas += list(adicionales or [])
+    else:
+        rutas = [ruta, *(adicionales or [])]
     frame = frame.copy()
     frame["veredicto_revision"] = ""
     frame["precio_reextraido"] = np.nan
     frame["moneda_reextraida"] = ""
     frame["evidencia_precio"] = ""
-    if not ruta.exists():
-        return frame
-    revision = pd.read_csv(ruta, dtype=str).fillna("")
-    revision["veredicto"] = revision["veredicto"].str.strip().str.lower()
 
-    # Reextraccion: si la revision registro un precio verificado en la descripcion o en
-    # el titulo del anuncio, se guarda como medida alternativa con su evidencia. El
-    # campo publicado no se corrige: `precio_analisis` decide que valor se analiza.
-    if "precio_en_descripcion" in revision:
-        revisados = revision.copy()
-        revisados["precio_verificado"] = pd.to_numeric(revisados["precio_en_descripcion"], errors="coerce")
-        if "moneda_en_descripcion" not in revisados:
-            revisados["moneda_en_descripcion"] = ""
-        revisados = revisados[revisados["precio_verificado"].notna() & revisados["url"].ne("")]
-        if not revisados.empty:
-            precios = dict(zip(revisados["url"], revisados["precio_verificado"]))
-            monedas = dict(zip(revisados["url"], revisados["moneda_en_descripcion"].str.upper()))
-            evidencias = dict(zip(revisados["url"], revisados["observacion"]))
-            con_precio = frame["url"].isin(precios)
-            frame.loc[con_precio, "precio_reextraido"] = frame.loc[con_precio, "url"].map(precios)
-            frame.loc[con_precio, "moneda_reextraida"] = frame.loc[con_precio, "url"].map(monedas)
-            frame.loc[con_precio, "evidencia_precio"] = frame.loc[con_precio, "url"].map(evidencias)
-            print(
-                f"Reextraccion manual de precio: {int(con_precio.sum())} anuncios con "
-                "precio verificado en la fuente"
+    leidas: list[str] = []
+    veredictos: dict[str, str] = {}
+    precios: dict[str, float] = {}
+    monedas: dict[str, str] = {}
+    evidencias: dict[str, str] = {}
+    for archivo in rutas:
+        if not archivo.exists():
+            continue
+        revision = pd.read_csv(archivo, dtype=str).fillna("")
+        if "url" not in revision or "veredicto" not in revision:
+            continue
+        revision["veredicto"] = revision["veredicto"].str.strip().str.lower()
+        leidas.append(archivo.name)
+
+        # Reextraccion: si la revision registro un precio verificado en la
+        # descripcion o en el titulo, se guarda como medida alternativa con su
+        # evidencia. El campo publicado no se corrige: `precio_analisis` decide.
+        if "precio_en_descripcion" in revision:
+            revisados = revision.copy()
+            if "moneda_en_descripcion" not in revisados:
+                revisados["moneda_en_descripcion"] = ""
+            if "observacion" not in revisados:
+                revisados["observacion"] = ""
+            revisados["precio_verificado"] = pd.to_numeric(
+                revisados["precio_en_descripcion"], errors="coerce"
             )
+            revisados = revisados[
+                revisados["precio_verificado"].notna() & revisados["url"].ne("")
+            ].copy()
+            # Cada URL conserva el primer precio registrado (la revision manual
+            # original tiene prioridad sobre las recuperaciones posteriores).
+            for url, precio in zip(revisados["url"], revisados["precio_verificado"]):
+                precios.setdefault(url, precio)
+            for url, moneda in zip(revisados["url"], revisados["moneda_en_descripcion"].str.upper()):
+                monedas.setdefault(url, moneda)
+            for url, cita in zip(revisados["url"], revisados["observacion"]):
+                evidencias.setdefault(url, cita)
 
-    revision = revision[revision["veredicto"].isin(VEREDICTOS_EXCLUYENTES)]
-    if revision.empty:
+        # Veredictos: si varias listas informan el mismo URL, gana la primera.
+        for url, veredicto in zip(revision["url"], revision["veredicto"]):
+            if url and veredicto:
+                veredictos.setdefault(url, veredicto)
+
+    if precios:
+        con_precio = frame["url"].isin(precios)
+        frame.loc[con_precio, "precio_reextraido"] = frame.loc[con_precio, "url"].map(precios)
+        frame.loc[con_precio, "moneda_reextraida"] = frame.loc[con_precio, "url"].map(monedas)
+        frame.loc[con_precio, "evidencia_precio"] = frame.loc[con_precio, "url"].map(evidencias)
+        print(
+            f"Reextraccion manual de precio: {int(con_precio.sum())} anuncios con "
+            "precio verificado en la fuente"
+        )
+
+    if not veredictos:
         return frame
-    veredictos = dict(zip(revision["url"], revision["veredicto"]))
     afectados = frame["url"].isin(veredictos)
-    frame.loc[afectados, "precio_sospechoso"] = True
     frame.loc[afectados, "veredicto_revision"] = frame.loc[afectados, "url"].map(veredictos)
+    excluyentes = afectados & frame["veredicto_revision"].isin(VEREDICTOS_EXCLUYENTES)
+    frame.loc[excluyentes, "precio_sospechoso"] = True
     print(
-        f"Revision manual de precios bajos: {int(afectados.sum())} anuncios marcados "
-        f"(fuente: {ruta.relative_to(REPO_ROOT) if ruta.is_relative_to(REPO_ROOT) else ruta})"
+        f"Revision de precios: {int(afectados.sum())} anuncios con veredicto "
+        f"(listas: {', '.join(leidas)})"
     )
     return frame
 
@@ -411,7 +502,9 @@ def aplicar_detalle_anuncios(
     `extraer_detalle_anuncios_revolico.py` busca la cantidad escrita por el
     anunciante en descripcion, titulo y enlace (slug), con patrones
     conservadores; aqui se aplican las columnas por URL sin tocar el campo
-    publicado. Quien decide que valor se analiza es `detalle_analisis()`.
+    publicado. Si la descripcion no menciona la cantidad, se toma el valor del
+    titulo del anuncio y `evidencia_detalle` indica de que campo salio cada
+    valor. Quien decide que valor se analiza es `detalle_analisis()`.
 
     Tambien documenta, con evidencia, la ventana de desaparicion de los anuncios
     borrados o despublicados: el listado guardado donde aun aparecian se descargo
@@ -448,16 +541,32 @@ def aplicar_detalle_anuncios(
         return frame
     por_url = detalle.set_index("url")
     correspondencia = frame.loc[indices, "url"]
+
+    def columna_detalle(origen: str) -> pd.Series:
+        """Valores de una columna del CSV de detalle; si no existe, NaN."""
+        if origen in por_url.columns:
+            return correspondencia.map(por_url[origen])
+        return pd.Series(np.nan, index=correspondencia.index)
+
+    # Cadena documentada: la descripcion del anuncio primero y, si no menciona
+    # la cantidad, el titulo del propio anuncio ("Apto 1/4" = 1 dormitorio);
+    # despues entran el campo publicado y el slug, que resuelve detalle_analisis.
+    # Solo se leen columnas presentes en el CSV de detalle.
+    for destino, (describir, nombrar) in {
+        "habitaciones_reextraido": ("habitaciones_descripcion", "habitaciones_titulo"),
+        "banos_reextraido": ("banos_descripcion", "banos_titulo"),
+    }.items():
+        desde_descripcion = pd.to_numeric(columna_detalle(describir), errors="coerce")
+        desde_titulo = pd.to_numeric(columna_detalle(nombrar), errors="coerce")
+        frame.loc[indices, destino] = desde_descripcion.where(desde_descripcion.notna(), desde_titulo)
     asignar = {
-        "habitaciones_reextraido": "habitaciones_descripcion",
-        "banos_reextraido": "banos_descripcion",
         "habitaciones_slug": "habitaciones_slug",
         "banos_slug": "banos_slug",
         "evidencia_detalle": "evidencia_detalle",
         "conflicto_detalle": "conflicto_detalle",
     }
     for destino, origen in asignar.items():
-        serie = correspondencia.map(por_url[origen])
+        serie = columna_detalle(origen)
         frame.loc[indices, destino] = pd.to_numeric(serie, errors="coerce") if destino in numericas else serie
     # Ventana de desaparicion: solo para los que ya no estan publicados.
     estado = correspondencia.map(por_url["estado"])
@@ -533,6 +642,21 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         merged = merged.drop(columns=["_quality_key"])
 
     merged = aplicar_veredictos_revision(merged)
+    merged, no_residenciales = excluir_no_residenciales(merged)
+    if not no_residenciales.empty:
+        # Evidencia de la exclusion: las filas quedan en su propio CSV fechado
+        # y solo desaparecen del maestro derivado; ninguna fuente original se
+        # modifica.
+        carpeta = root / "outputs" / "integracion"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        marca = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ruta_exclusion = carpeta / f"anuncios_no_residenciales_{marca}.csv"
+        no_residenciales.to_csv(ruta_exclusion, index=False, encoding="utf-8-sig")
+        motivos = {motivo: int(cantidad) for motivo, cantidad in no_residenciales["veredicto_revision"].value_counts().items()}
+        print(
+            f"Excluidos del dataset por no ser vivienda en venta: "
+            f"{len(no_residenciales)} anuncios {motivos} -> {ruta_exclusion.name}"
+        )
     merged = aplicar_metadatos_revolico(merged)
     merged = aplicar_detalle_anuncios(merged)
     merged["precio_analisis"], merged["moneda_analisis"] = precios_analisis(merged)

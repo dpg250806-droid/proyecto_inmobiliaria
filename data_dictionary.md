@@ -106,7 +106,7 @@ El snapshot histórico `outputs/hogarencuba/viviendas_hogarencuba_revisada_20261
 
 El snapshot `outputs/hogarencuba/viviendas_hogarencuba_revalidada_20261017_232654.csv` conserva las 155 filas del origen y revalida en vivo 14 discrepancias; las otras 141 se conservan sin recaptura y tienen estado explícito `sin_discrepancia_en_evidencia_local`. El origen histórico permanece intacto. Después se completó una captura nueva en `outputs/hogarencuba/viviendas_hogarencuba_20261017_234325.csv`: 188 URLs únicas, 10 de 10 páginas y 0 fichas fallidas. Los precios llevan `precio_metodo_extraccion` y `precio_evidencia`; los 14 IDs discrepantes anteriores aparecen con el parser actual. HEC2258 se registra como EUR por la etiqueta expresa `PRECIO EN EUR`; los otros 13 casos de ese grupo tienen moneda USD del JSON-LD asociado al ID exacto.
 
-El maestro local más reciente es `outputs/integracion/dataset_maestro_20261018_151710.csv`, con 1.566 filas: 780 Revolico, 598 Cubisima y 188 HogarEnCuba. El CSV original de Cubisima y los maestros anteriores continúan sin modificaciones. El análisis preliminar basado en ese maestro está en `outputs/preguntas/preguntas_resueltas_20261018_154323.md`; no es el informe final, pendiente de las entrevistas.
+El maestro local más reciente es `outputs/integracion/dataset_maestro_20261018_225829.csv`, con 1.560 filas: 775 Revolico, 597 Cubisima y 188 HogarEnCuba (6 anuncios no residenciales apartados; ver más abajo). El CSV original de Cubisima y los maestros anteriores continúan sin modificaciones. El análisis preliminar basado en ese maestro está en `outputs/preguntas/preguntas_resueltas_20261018_231919.md`; no es el informe final, pendiente de las entrevistas.
 
 ### Columnas de precio y revisión del maestro
 
@@ -115,14 +115,25 @@ El maestro distingue el campo publicado del precio que se analiza; nada se corri
 | Columna | Tipo | Contenido y uso |
 |:---------|:-----|:----------------|
 | `precio_original`, `moneda` | numerico / categorica | Campo publicado por la fuente. Se conserva sin corregir y mide la cobertura de cada canal. |
-| `precio_sospechoso` | booleano | Marca importes que no deben analizarse tal cual: moneda contradicha por la fuente, importe 1, veredicto manual excluyente, etc. 160 marcas en la base vigente. |
-| `veredicto_revision` | categorica | Veredicto de la revisión manual de precios bajos: `error`, `producto`, `permuta`, `despublicado`, `no_verificable`, `otro`. Vacío si el anuncio no fue revisado. |
-| `precio_reextraido` | numerico | Precio verificado en la descripción o el título del anuncio durante la revisión manual (12 anuncios). Vacío cuando no hay precio verificable. |
+| `precio_sospechoso` | booleano | Marca importes que no deben analizarse tal cual: moneda contradicha por la fuente, importe 1, veredicto manual excluyente, etc. 154 marcas en la base vigente. |
+| `veredicto_revision` | categorica | Veredicto de la revisión de precios (listas `precios_bajos.csv` y `precios_ausentes.csv`): `error`, `producto`, `permuta`, `despublicado`, `no_verificable`, `otro`, `precio_recuperado`, `sin_precio_en_texto`, `solo_coincide_con_publicado`, `anuncio_no_disponible`, `consulta_fallida`, `no_consultado_sin_red`, `ambiguo`, `moneda_ambigua`, `moneda_sin_tasa`, `cup_requiere_validacion`, `valor_improbable`, `solo_coincidencias_tipograficas`. Solo los veredictos excluyentes (`alquiler`, `despublicado`, `error`, `no_verificable`, `otro`, `permuta`, `producto`) marcan `precio_sospechoso`; el resto deja constancia sin excluir. Si dos listas informan del mismo anuncio, gana la primera (`precios_bajos.csv`, la revisión manual original). Vacío si el anuncio no fue revisado. |
+| `precio_reextraido` | numerico | Precio verificado en la descripción o el título del anuncio por revisión manual (25 anuncios: 12 de `precios_bajos.csv` y 13 de la búsqueda de precios ausentes). Vacío cuando no hay precio verificable. |
 | `moneda_reextraida` | categorica | Moneda declarada en esa misma evidencia. |
 | `evidencia_precio` | texto | Cita literal de la evidencia usada en la reextracción; permite reabrir cada caso. |
 | `precio_analisis` | numerico | Precio que usan conversión, comparativo, segmentación, clustering y preguntas. Reglas: reextracción verificada primero; después el campo publicado si no está marcado como sospechoso y tiene moneda; si no, vacío (no se imputa). |
 | `moneda_analisis` | categorica | Moneda asociada a `precio_analisis`. |
-| `origen_precio` | categorica | `reextraccion_manual` (12), `campo_publicado` (1406) o `excluido` (148). |
+| `origen_precio` | categorica | `reextraccion_manual` (25), `campo_publicado` (1406) o `excluido` (129). |
+
+### Revisiones de precios y anuncios no residenciales
+
+`aplicar_veredictos_revision()` aplica por defecto dos listas versionadas en `revision_manual/`:
+
+- `precios_bajos.csv`: revisión uno a uno de los 59 precios inferiores a 100 contra la página del anuncio.
+- `precios_ausentes.csv`: la salida de `revisar_precios_ausentes.py`, que busca precio en título, descripción y página de cada anuncio sin `precio_analisis` y deja un veredicto por anuncio. Las reglas son conservadoras: hace falta una moneda explícita (`$` solo no basta, puede ser USD o CUC), 7 o más dígitos sin separador se tratan como posible teléfono, dos importes distintos no se resuelven solos, y CUP/MLC quedan para validación manual. Una reejecución conserva lo decidido en corridas anteriores.
+
+Lo que no se pudo resolver queda en `outputs/validacion/precios_pendientes_<fecha>.csv/.md` (129 anuncios el 18/10/2026) para revisión manual, con el motivo y las citas. Los anuncios que no son vivienda en venta (veredictos `producto`, `permuta`, `otro` y `alquiler`) se apartan del maestro por `excluir_no_residenciales()` y quedan documentados en `outputs/integracion/anuncios_no_residenciales_<fecha>.csv`; no se borra ninguna fuente original.
+
+El campo `tipo_vivienda` de Revolico se clasifica con palabras clave sobre el título completo (`clasificar_tipo_vivienda()`, misma precedencia que `limpiar_revolico.py`: penthouse > casa > apartamento/apto) porque el CSV de origen no trae ese campo: antes se usaba la primera palabra del título, lo que metía precios y teléfonos como tipos (734 filas). Lo no reconocido queda `no_clasificado` (138 filas) y, si no hay título, no se inventa ningún tipo.
 
 ### Metadatos de la página del anuncio de Revolico
 
@@ -141,15 +152,15 @@ La tarjeta del listado guardado (`paginas_revolico/`) solo contiene imagen, prec
 
 ### Habitaciones, baños y disponibilidad de Revolico
 
-La tarjeta del listado solo aporta el título, y el título casi nunca menciona baños. `extraer_detalle_anuncios_revolico.py` busca la cantidad escrita por el anunciante en la **descripción**, el **título** y el **enlace (slug)** de cada anuncio, con patrones conservadores: dígitos ("3 cuartos", "4 hab", "2 banos"), palabras ("un cuarto", "dos banos", hasta diez), notación habanera ("apto 2/4" = 2 dormitorios) y fracciones de baño ("medio bano" y "N banos y medio" suman 0.5). Reglas: primera aparición explícita gana; si el mismo texto menciona dos cantidades distintas, ambas quedan en la evidencia y el conflicto se marca sin resolver; si no hay mención, no se rellena nada. La salida es `outputs/metadatos_revolico/detalle_anuncios_revolico_<marca>.csv` y se aplica con `aplicar_detalle_anuncios()`.
+La tarjeta del listado solo aporta el título, y el título casi nunca menciona baños. `extraer_detalle_anuncios_revolico.py` busca la cantidad escrita por el anunciante en la **descripción**, el **título** y el **enlace (slug)** de cada anuncio, con patrones conservadores: dígitos ("3 cuartos", "4 hab", "2 banos"), palabras ("un cuarto", "dos banos", hasta diez), notación habanera ("apto 2/4" = 2 dormitorios) y fracciones de baño ("medio bano" y "N banos y medio" suman 0.5). Reglas: primera aparición explícita gana; si el mismo texto menciona dos cantidades distintas, ambas quedan en la evidencia y el conflicto se marca sin resolver; si no hay mención, no se rellena nada. La cadena al integrar el maestro es descripción primero y, si la descripción no menciona la cantidad, el título del propio anuncio (p. ej. `Apto 1/4` = 1 dormitorio); después entran el campo publicado y el slug del enlace. La salida es `outputs/metadatos_revolico/detalle_anuncios_revolico_<marca>.csv` y se aplica con `aplicar_detalle_anuncios()`.
 
 | Columna | Tipo | Contenido y uso |
 |:---------|:-----|:----------------|
-| `habitaciones_reextraido` | numerico | Habitaciones leídas de la descripción del anuncio. |
-| `banos_reextraido` | numerico | Baños leídos de la descripción del anuncio. |
+| `habitaciones_reextraido` | numerico | Habitaciones leídas de la descripción del anuncio; si la descripción no las menciona, del título del anuncio. |
+| `banos_reextraido` | numerico | Baños leídos de la descripción del anuncio; si la descripción no los menciona, del título del anuncio. |
 | `habitaciones_slug` | numerico | Habitaciones escritas en el enlace (slug), solo cuando no hay descripción. |
 | `banos_slug` | numerico | Baños escritos en el enlace (slug). |
-| `evidencia_detalle` | texto | Fragmento literal que justifica el valor extraído (p. ej. `habitaciones='4 cuartos'`). |
+| `evidencia_detalle` | texto | Fragmento literal que justifica el valor extraído (p. ej. `habitaciones='4 cuartos'`, o `habitaciones_titulo='1/4'` cuando el valor viene del título). |
 | `conflicto_detalle` | texto | Marcado cuando título y descripción, o el propio texto, ofrecen cantidades distintas. No se resuelve: se conserva la primera aparición. |
 | `habitaciones_analisis` | numerico | Habitaciones que usan segmentación, clustering, medianas y gráficos. Reglas: descripción/título primero; después el campo publicado; después el slug; vacío si nada lo dice. No se imputa. |
 | `banos_analisis` | numerico | Baños con la misma regla. |
@@ -159,7 +170,7 @@ La tarjeta del listado solo aporta el título, y el título casi nunca menciona 
 | `ventana_despublicacion` | texto | Intervalo `AAAA-MM-DD a AAAA-MM-DD` dentro del cual ocurrió la desaparición: desde el listado guardado hasta la consulta que devolvió el error. Es un límite con evidencia, no una fecha exacta: la página borrada no conserva fecha. |
 | `justificacion_disponibilidad` | texto | Explicación legible de por qué el anuncio sigue en el dataset pese a no estar accesible. |
 
-La función `detalle_analisis()` de `precio_moneda.py` implementa la regla de precedencia en un solo sitio y también funciona con maestros antiguos sin columnas de reextracción (cae al campo publicado). **Cobertura honesta (Revolico, 780 anuncios):** habitaciones 532 (68%) y baños 289 (37%). El techo lo fija el propio texto: 158 anuncios ya no están accesibles y no tienen descripción, y otros anuncios publicados simplemente no mencionan la cantidad. No se imputa nada.
+La función `detalle_analisis()` de `precio_moneda.py` implementa la regla de precedencia en un solo sitio y también funciona con maestros antiguos sin columnas de reextracción (cae al campo publicado). **Cobertura honesta (Revolico, 775 anuncios):** habitaciones 535 (69%) y baños 288 (37%). El techo lo fija el propio texto: 156 anuncios ya no están accesibles y no tienen descripción, y otros anuncios publicados simplemente no mencionan la cantidad. No se imputa nada.
 
 El **m² queda fuera del análisis**: ninguna fuente lo publica de forma sistemática (Revolico 0%, Cubisima 0%, HogarEnCuba ~5%). La columna `superficie_m2` se conserva en el maestro solo como traza de origen; su cobertura se reporta como hallazgo comparativo (los clasificados informales no lo ofrecen), nunca como variable explicativa de precios.
 
@@ -167,7 +178,7 @@ La función `precios_analisis()` de `precio_moneda.py` implementa estas reglas e
 
 ## Tasas y equivalencias
 
-El registro local de tasas no contiene `cuc_informal_cup` ni `cuc_formal_cup`. La conversión nominal actual es `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261018_002424.csv`; usa `--cuc-usd-nominal` bajo la decisión explícita de la usuaria de aplicar 1 CUC = 1 USD como equivalencia nominal, no como tasa de mercado, y solo a anuncios con `fecha_publicacion` posterior a 2021 (los 546 registros CUC van del 17/10/2023 al 12/10/2026). De ellos, 540 se convirtieron y 6 sospechosos quedaron sin conversión; el método queda en `metodo_conversion_cuc` y la paridad aplicada en `fx_cuc_usd_nominal`. Se conserva el importe y la moneda originales; no se inventa una tasa CUC/CUP.
+El registro local de tasas no contiene `cuc_informal_cup` ni `cuc_formal_cup`. La conversión nominal actual es `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261018_231830.csv`; usa `--cuc-usd-nominal` bajo la decisión explícita de la usuaria de aplicar 1 CUC = 1 USD como equivalencia nominal, no como tasa de mercado, y solo a anuncios con `fecha_publicacion` posterior a 2021 (los 545 registros CUC publicados van del 17/10/2023 al 12/10/2026; el maestro deja 16 fuera por sospecha y la conversión se aplica a los 529 restantes). El método queda en `metodo_conversion_cuc` y la paridad aplicada en `fx_cuc_usd_nominal`. Se conserva el importe y la moneda originales; no se inventa una tasa CUC/CUP.
 
 Los análisis por precio, zona, habitaciones, canal, segmentación y clustering separan por moneda y excluyen moneda desconocida de las comparaciones de importes. Los resultados antiguos no se regeneran solos al cambiar parsers.
 
