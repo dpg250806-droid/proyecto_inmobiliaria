@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Segmenta viviendas por cuartiles de precio y perfiles de habitaciones."""
+"""Segmenta viviendas por terciles de precio y perfiles de habitaciones."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +10,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import seaborn as sns
 
 from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
@@ -53,9 +54,15 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
         return frame
 
     def price_groups(prices):
-        q1 = prices.quantile(0.33)
-        q2 = prices.quantile(0.66)
-        return prices.map(lambda value: "economica" if value <= q1 else "media" if value <= q2 else "alta")
+        corte_inferior = prices.quantile(0.33)
+        corte_superior = prices.quantile(0.66)
+        return prices.map(
+            lambda value: "economica"
+            if value <= corte_inferior
+            else "media"
+            if value <= corte_superior
+            else "alta"
+        )
 
     def room_profile(value):
         if value <= 2:
@@ -81,40 +88,113 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_segment(frame: pd.DataFrame, out: Path):
+    counts = frame.groupby("moneda_analisis").size()
+    usables = counts[counts >= 5].index
+    excluidas = counts[counts < 5]
+    plot = frame[frame["moneda_analisis"].isin(usables)].copy()
+    if plot.empty:
+        return
+    plot["grupo_etiqueta"] = plot["grupo_precio"].map(
+        {"economica": "Económica", "media": "Media", "alta": "Alta"}
+    )
     graph = sns.relplot(
-        data=frame,
+        data=plot,
         x="habitaciones",
         y="precio_analisis",
-        hue="grupo_precio",
+        hue="grupo_etiqueta",
+        hue_order=["Económica", "Media", "Alta"],
         col="moneda_analisis",
         col_wrap=2,
         kind="scatter",
         alpha=0.55,
         height=4,
         aspect=1.2,
-        palette={"economica": "#9bb7d4", "media": "#4472c4", "alta": "#1f3864"},
+        palette={"Económica": "#9bb7d4", "Media": "#4472c4", "Alta": "#1f3864"},
     )
-    graph.set_axis_labels("Habitaciones", "Precio de analisis")
+    graph.set(yscale="log")
+    graph.set_axis_labels("Habitaciones", "Precio de análisis (escala log)")
     graph.set_titles("Moneda: {col_name}")
-    graph.fig.suptitle("Perfil por precio y habitaciones (precios separados por moneda)", y=1.02)
-    graph.fig.savefig(out / "segmentos_precio_habitaciones.png", dpi=140, facecolor="white")
+    try:
+        graph.legend.set_title("Grupo de precio")
+    except AttributeError:
+        pass
+    detalle = "; ".join(f"{moneda}: {n}" for moneda, n in counts[usables].items())
+    nota = ""
+    if not excluidas.empty:
+        nota = " | sin gráfico por n<5: " + ", ".join(f"{m}: {n}" for m, n in excluidas.items())
+    graph.fig.suptitle(
+        f"Perfil por precio y habitaciones (precios separados por moneda; n: {detalle}){nota}",
+        y=1.02,
+    )
+    graph.fig.savefig(
+        out / "segmentos_precio_habitaciones.png", dpi=140, facecolor="white", bbox_inches="tight"
+    )
     plt.close(graph.fig)
 
 
 def plot_source_segment(frame: pd.DataFrame, out: Path):
-    currencies = sorted(frame["moneda_analisis"].dropna().unique())
-    fig, axes = plt.subplots(1, len(currencies), figsize=(7 * len(currencies), 5), squeeze=False)
+    counts = frame.groupby("moneda_analisis").size()
+    usables = counts[counts >= 5].index
+    excluidas = counts[counts < 5]
+    plot = frame[frame["moneda_analisis"].isin(usables)].copy()
+    if plot.empty:
+        return
+    currencies = sorted(plot["moneda_analisis"].dropna().unique())
+    fig, axes = plt.subplots(1, len(currencies), figsize=(7 * len(currencies), 5.2), squeeze=False)
+    colores = {"economica": "#9bb7d4", "media": "#4472c4", "alta": "#1f3864"}
+    etiquetas = {"economica": "Económica", "media": "Media", "alta": "Alta"}
+    leyenda = None
     for ax, currency in zip(axes[0], currencies):
-        table = frame.loc[frame["moneda_analisis"].eq(currency)].groupby(["fuente", "grupo_precio"]).size().unstack(fill_value=0)
-        counts = table.div(table.sum(axis=1), axis=0).fillna(0) * 100
-        counts.plot(kind="bar", stacked=True, ax=ax, colormap="Blues")
-        ax.set_title(f"Moneda: {currency}")
-        ax.set_ylabel("Porcentaje")
+        table = (
+            plot.loc[plot["moneda_analisis"].eq(currency)]
+            .groupby(["fuente", "grupo_precio"])
+            .size()
+            .unstack(fill_value=0)
+        )
+        orden = [grupo for grupo in ["economica", "media", "alta"] if grupo in table.columns]
+        table = table.reindex(columns=orden, fill_value=0)
+        counts_pct = table.div(table.sum(axis=1), axis=0).fillna(0) * 100
+        counts_pct.rename(columns=etiquetas).plot(
+            kind="bar",
+            stacked=True,
+            ax=ax,
+            color=[colores[grupo] for grupo in orden],
+            width=0.7,
+            legend=False,
+        )
+        ax.set_title(f"Moneda: {currency} (n={int(table.values.sum())})")
+        ax.set_ylabel("Porcentaje de anuncios")
         ax.set_xlabel("Fuente")
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha="right")
-    fig.suptitle("Grupos de precio por fuente, separados por moneda")
-    plt.tight_layout()
-    fig.savefig(out / "segmentos_precio_por_fuente.png", dpi=140, facecolor="white")
+        ax.set_ylim(0, 100)
+        etiquetas_x = [
+            f"{fuente}\n(n={int(table.loc[fuente].sum())})" for fuente in table.index
+        ]
+        ax.set_xticklabels(etiquetas_x, rotation=15, ha="right")
+        if leyenda is None:
+            leyenda = (
+                [Patch(facecolor=colores[grupo]) for grupo in orden],
+                [etiquetas[grupo] for grupo in orden],
+            )
+    nota = ""
+    if not excluidas.empty:
+        nota = "Sin gráfico por n<5: " + ", ".join(f"{m}: {n}" for m, n in excluidas.items())
+    fig.suptitle("Grupos de precio por fuente, separados por moneda", y=1.01)
+    if leyenda is not None:
+        fig.legend(
+            leyenda[0],
+            leyenda[1],
+            title="Grupo de precio",
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.06),
+            ncol=3,
+            frameon=False,
+        )
+    if nota:
+        fig.text(0.5, -0.1, nota, ha="center", va="top", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(
+        out / "segmentos_precio_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight"
+    )
     plt.close(fig)
 
 

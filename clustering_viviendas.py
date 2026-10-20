@@ -93,22 +93,33 @@ def main():
         scales[scales == 0] = 1
         x_std = (x - means) / scales
         labels, centers_std = kmeans(x_std, k=3)
+        # Reordenar los grupos por mediana de precio: 0=economico, 1=medio,
+        # 2=alto. Asi el numero del cluster es interpretable y estable entre
+        # monedas; el agrupamiento en si no cambia.
+        temporal = pd.DataFrame({"cluster_original": labels, "precio": x[:, 0]})
+        orden = temporal.groupby("cluster_original")["precio"].median().sort_values().index.tolist()
+        mapa = {anterior: nuevo for nuevo, anterior in enumerate(orden)}
+        labels = np.array([mapa[etiqueta] for etiqueta in labels], dtype=int)
         data.loc[currency_rows.index, "cluster"] = labels
         centers = centers_std * scales + means
+        centers = centers[orden]
         for label, center in enumerate(centers):
             center_rows.append({
                 "moneda": currency,
                 "cluster": label,
+                "etiqueta": ["económico", "medio", "alto"][label],
                 "precio_medio": center[0],
                 "habitaciones_media": center[1],
                 "banos_media": center[2],
             })
 
+    data["cluster_etiqueta"] = data["cluster"].map({0: "económico", 1: "medio", 2: "alto"})
+
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     data.to_csv(OUT / f"clusters_viviendas_{stamp}.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(center_rows).to_csv(OUT / f"centroides_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
 
-    profile = data.groupby(["moneda_analisis", "cluster"]).agg(
+    profile = data.groupby(["moneda_analisis", "cluster", "cluster_etiqueta"]).agg(
         anuncios=("precio_analisis", "count"),
         precio_mediano=("precio_analisis", "median"),
         habitaciones_mediana=("habitaciones", "median"),
@@ -120,16 +131,30 @@ def main():
         data=data,
         x="habitaciones",
         y="precio_analisis",
-        hue="cluster",
+        hue="cluster_etiqueta",
+        hue_order=["económico", "medio", "alto"],
         col="moneda_analisis",
         col_wrap=2,
         kind="scatter",
-        palette="deep",
+        palette={"económico": "#9bb7d4", "medio": "#4472c4", "alto": "#1f3864"},
     )
-    graph.set_axis_labels("Habitaciones", "Precio de analisis")
+    graph.set(yscale="log")
+    graph.set_axis_labels("Habitaciones", "Precio de análisis (escala log)")
     graph.set_titles("Moneda: {col_name}")
-    graph.fig.suptitle("Clustering de viviendas (k-means por moneda)", y=1.02)
-    graph.fig.savefig(OUT / "clusters_viviendas.png", dpi=140, facecolor="white")
+    try:
+        graph.legend.set_title("Grupo")
+    except AttributeError:
+        pass
+    detalle = data.groupby("moneda_analisis").size()
+    graph.fig.suptitle(
+        "Clustering de viviendas (k-means por moneda; grupos ordenados por mediana de precio; "
+        + "; ".join(f"{m}: n={n}" for m, n in detalle.items())
+        + ")",
+        y=1.02,
+    )
+    graph.fig.savefig(
+        OUT / "clusters_viviendas.png", dpi=140, facecolor="white", bbox_inches="tight"
+    )
     plt.close(graph.fig)
     print(f"Clusters guardados en {OUT}")
 

@@ -60,10 +60,16 @@ def prepare(frame: pd.DataFrame) -> pd.DataFrame:
         return "Revolico (clasificado informal)"
 
     frame["canal_grafico"] = frame.apply(canal, axis=1)
+    # Columnas derivadas que pueden faltar en maestros antiguos o en pruebas.
+    if "municipio_homologado" not in frame:
+        frame["municipio_homologado"] = ""
+    if "fecha_reextraida" not in frame:
+        frame["fecha_reextraida"] = ""
     return frame
 
 
 def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
+    """Cobertura del campo publicado (no mide la cobertura del analisis)."""
     rows = []
     for source, g in frame.groupby("fuente"):
         rows.append({
@@ -79,6 +85,30 @@ def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def analysis_coverage_table(frame: pd.DataFrame) -> pd.DataFrame:
+    """Cobertura del mejor dato disponible para el analisis.
+
+    Separa lo que la fuente publica en un campo (summary_table) de lo que se
+    recupera del texto, la pagina o el slug. Es la tabla que debe citarse al
+    describir habitaciones, banos, municipio o fecha del analisis.
+    """
+    rows = []
+    for source, g in frame.groupby("fuente"):
+        fecha_publicada = g["fecha_publicacion"].fillna("").astype(str).str.strip().ne("")
+        fecha_analisis = fecha_publicada | g["fecha_reextraida"].fillna("").astype(str).str.strip().ne("")
+        rows.append({
+            "fuente": source,
+            "anuncios": len(g),
+            "precio_analisis_pct": round(100 * g["precio_analisis"].notna().mean(), 1),
+            "ubicacion_analisis_pct": round(100 * g["ubicacion_analisis"].fillna("").astype(str).str.strip().ne("").mean(), 1),
+            "municipio_homologado_pct": round(100 * g["municipio_homologado"].fillna("").astype(str).str.strip().ne("").mean(), 1),
+            "habitaciones_analisis_pct": round(100 * g["habitaciones_analisis"].notna().mean(), 1),
+            "banos_analisis_pct": round(100 * g["banos_analisis"].notna().mean(), 1),
+            "fecha_analisis_pct": round(100 * fecha_analisis.mean(), 1),
+        })
+    return pd.DataFrame(rows)
+
+
 def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
     rows = []
     usable = frame[
@@ -86,6 +116,8 @@ def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
         & frame["moneda_analisis"].ne("")
     ]
     for (canal, currency), g in usable.groupby(["canal_grafico", "moneda_analisis"]):
+        fecha_publicada = g["fecha_publicacion"].fillna("").astype(str).str.strip().ne("")
+        fecha_analisis = fecha_publicada | g["fecha_reextraida"].fillna("").astype(str).str.strip().ne("")
         rows.append({
             "canal": canal,
             "moneda": currency,
@@ -94,7 +126,8 @@ def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
             "mediana_precio": g["precio_analisis"].median(),
             "con_habitaciones_pct": round(100 * g["habitaciones_analisis"].notna().mean(), 1),
             "con_banos_pct": round(100 * g["banos_analisis"].notna().mean(), 1),
-            "con_fecha_pct": round(100 * g["fecha_publicacion"].notna().mean(), 1),
+            "con_fecha_publicada_pct": round(100 * fecha_publicada.mean(), 1),
+            "con_fecha_analisis_pct": round(100 * fecha_analisis.mean(), 1),
         })
     return pd.DataFrame(rows)
 
@@ -103,13 +136,58 @@ def plot_coverage(summary: pd.DataFrame):
     metrics = ["ubicacion_pct", "habitaciones_pct", "banos_pct", "precio_pct", "moneda_pct", "fecha_pct"]
     long = summary.melt(id_vars="fuente", value_vars=metrics, var_name="variable", value_name="cobertura_pct")
     long["variable"] = long["variable"].str.replace("_pct", "", regex=False)
+    etiquetas = {
+        "ubicacion": "Ubicación",
+        "habitaciones": "Habitaciones",
+        "banos": "Baños",
+        "precio": "Precio",
+        "moneda": "Moneda",
+        "fecha": "Fecha",
+    }
+    long["variable"] = long["variable"].map(etiquetas).fillna(long["variable"])
     fig, ax = plt.subplots(figsize=(11, 5.5))
     sns.barplot(data=long, x="variable", y="cobertura_pct", hue="fuente", ax=ax)
     ax.set_ylabel("Cobertura (%)")
-    ax.set_title("Cobertura de metadatos por fuente")
+    ax.set_xlabel("Campo publicado")
+    ax.set_title("Cobertura del campo publicado por fuente")
+    ax.set_ylim(0, 100)
     plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
-    plt.tight_layout()
-    fig.savefig(OUT / "01_cobertura_por_fuente.png", dpi=140, facecolor="white")
+    ax.legend(title="Fuente", loc="upper center", bbox_to_anchor=(0.5, -0.24), ncol=3, frameon=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "01_cobertura_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_analysis_coverage(coverage: pd.DataFrame):
+    metrics = [
+        "precio_analisis_pct",
+        "ubicacion_analisis_pct",
+        "municipio_homologado_pct",
+        "habitaciones_analisis_pct",
+        "banos_analisis_pct",
+        "fecha_analisis_pct",
+    ]
+    long = coverage.melt(id_vars="fuente", value_vars=metrics, var_name="variable", value_name="cobertura_pct")
+    long["variable"] = long["variable"].str.replace("_pct", "", regex=False)
+    etiquetas = {
+        "precio_analisis": "Precio",
+        "ubicacion_analisis": "Ubicación",
+        "municipio_homologado": "Municipio",
+        "habitaciones_analisis": "Habitaciones",
+        "banos_analisis": "Baños",
+        "fecha_analisis": "Fecha",
+    }
+    long["variable"] = long["variable"].map(etiquetas).fillna(long["variable"])
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    sns.barplot(data=long, x="variable", y="cobertura_pct", hue="fuente", ax=ax)
+    ax.set_ylabel("Cobertura (%)")
+    ax.set_xlabel("Dato")
+    ax.set_title("Cobertura del dato de análisis por fuente (texto, página o slug)")
+    ax.set_ylim(0, 100)
+    plt.setp(ax.get_xticklabels(), rotation=20, ha="right")
+    ax.legend(title="Fuente", loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, frameon=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "01b_cobertura_analisis_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -117,23 +195,52 @@ def plot_channel_price(frame: pd.DataFrame):
     valid = frame[frame["precio_analisis"].notna() & frame["moneda_analisis"].ne("")].copy()
     if valid.empty:
         return
-    graph = sns.catplot(
-        data=valid,
-        x="canal_grafico",
-        y="precio_analisis",
-        hue="fuente",
-        col="moneda_analisis",
-        kind="box",
-        showfliers=False,
-        height=5,
-        aspect=1.15,
-    )
-    graph.set_axis_labels("Canal", "Precio de analisis")
-    graph.set_titles("Moneda: {col_name}")
-    graph.set_xticklabels(rotation=12, ha="right")
-    graph.fig.suptitle("Precio de analisis por canal, separado por moneda", y=1.02)
-    graph.fig.savefig(OUT / "02_precio_por_canal.png", dpi=140, facecolor="white")
-    plt.close(graph.fig)
+    counts = valid.groupby("moneda_analisis").size()
+    usables = counts[counts >= 5].index
+    excluidas = counts[counts < 5]
+    valid = valid[valid["moneda_analisis"].isin(usables)].copy()
+    pares = valid.groupby(["moneda_analisis", "canal_grafico"]).size()
+    excluidas_pares = pares[pares < 10]
+    valid = valid[
+        valid.set_index(["moneda_analisis", "canal_grafico"]).index.isin(pares[pares >= 10].index)
+    ]
+    if valid.empty:
+        return
+    monedas = [m for m in ["CUC", "USD", "EUR", "CUP"] if m in set(valid["moneda_analisis"])]
+    fig, axes = plt.subplots(1, len(monedas), figsize=(6.4 * len(monedas), 5.2), sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, moneda in zip(axes, monedas):
+        data = valid[valid["moneda_analisis"].eq(moneda)].copy()
+        orden = list(data["canal_grafico"].drop_duplicates())
+        sns.boxplot(
+            data=data,
+            x="canal_grafico",
+            y="precio_analisis",
+            order=orden,
+            ax=ax,
+            color="#4472c4",
+            showfliers=False,
+            width=0.6,
+        )
+        ax.set_yscale("log")
+        ax.set_title(f"Moneda: {moneda}")
+        ax.set_xlabel("Canal")
+        ax.set_ylabel("Precio de análisis (escala log)" if moneda == monedas[0] else "")
+        plt.setp(ax.get_xticklabels(), rotation=15, ha="right")
+    notas = []
+    if not excluidas.empty:
+        notas.append("moneda n<5: " + ", ".join(f"{m}: {n}" for m, n in excluidas.items()))
+    if not excluidas_pares.empty:
+        notas.append(
+            "canal-moneda n<10: "
+            + ", ".join(f"{c}/{m}: {n}" for (m, c), n in excluidas_pares.items())
+        )
+    fig.suptitle("Precio de análisis por canal, separado por moneda", y=1.02)
+    if notas:
+        fig.text(0.5, -0.02, "Sin gráfico: " + " | ".join(notas), ha="center", va="top", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(OUT / "02_precio_por_canal.png", dpi=140, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
 
 
 def plot_channel_rooms(frame: pd.DataFrame):
@@ -149,22 +256,29 @@ def plot_channel_rooms(frame: pd.DataFrame):
     ax.bar_label(bars, labels=[f"{v:.1f}%" for v in channel["con_habitaciones_pct"]], padding=2)
     ax.set_title("Cobertura de habitaciones (mejor dato disponible) por canal")
     ax.set_ylabel("% de anuncios con habitaciones")
+    ax.set_ylim(0, 108)
     plt.setp(ax.get_xticklabels(), rotation=12, ha="right")
     plt.tight_layout()
-    fig.savefig(OUT / "03_cobertura_habitaciones_por_canal.png", dpi=140, facecolor="white")
+    fig.savefig(OUT / "03_cobertura_habitaciones_por_canal.png", dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
 def plot_currency_percentage(frame: pd.DataFrame):
-    counts = frame.groupby(["fuente", "moneda"]).size().unstack(fill_value=0)
+    work = frame.copy()
+    work["moneda"] = work["moneda"].replace("", "sin dato")
+    counts = work.groupby(["fuente", "moneda"]).size().unstack(fill_value=0)
     pct = counts.div(counts.sum(axis=1), axis=0) * 100
     pct = pct.fillna(0)
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(8, 5))
     pct.plot(kind="bar", stacked=True, ax=ax, colormap="viridis")
-    ax.set_title("Composición de moneda por fuente (%)")
+    ax.set_title("Composición de moneda publicada por fuente (%)")
     ax.set_ylabel("Porcentaje")
-    plt.tight_layout()
-    fig.savefig(OUT / "04_moneda_por_fuente.png", dpi=140, facecolor="white")
+    ax.set_xlabel("Fuente")
+    ax.set_ylim(0, 100)
+    plt.setp(ax.get_xticklabels(), rotation=0)
+    ax.legend(title="Moneda", loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=5, frameon=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "04_moneda_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -173,27 +287,46 @@ def main():
     frame = pd.read_csv(newest_master(), dtype=str)
     frame = prepare(frame)
     sources = summary_table(frame)
+    coverage = analysis_coverage_table(frame)
     channels = channel_summary(frame)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sources.to_csv(OUT / f"cobertura_por_fuente_{stamp}.csv", index=False, encoding="utf-8-sig")
+    coverage.to_csv(OUT / f"cobertura_analisis_por_fuente_{stamp}.csv", index=False, encoding="utf-8-sig")
     channels.to_csv(OUT / f"comparativo_canales_{stamp}.csv", index=False, encoding="utf-8-sig")
 
     plot_coverage(sources)
+    plot_analysis_coverage(coverage)
     plot_channel_price(frame)
     plot_channel_rooms(frame)
     plot_currency_percentage(frame)
 
     # print top-line answers
-    print("COBERTURA POR FUENTE")
+    print("COBERTURA DEL CAMPO PUBLICADO POR FUENTE")
     print(sources.to_string(index=False))
+    print("")
+    print("COBERTURA DEL DATO DE ANALISIS POR FUENTE")
+    print(coverage.to_string(index=False))
     print("")
     print("COMPARATIVO POR CANAL")
     print(channels.to_string(index=False))
 
     md = OUT / f"comparativo_fuentes_{stamp}.md"
     md.write_text(
-        "## Cobertura por fuente\n\n" + sources.to_markdown(index=False) + "\n\n" +
-        "## Comparativo por canal\n\n" + channels.to_markdown(index=False) + "\n",
+        "## Cobertura del campo publicado por fuente\n\n"
+        "Mide el campo tal como aparece en la fuente. No mide la cobertura del análisis: "
+        "por ejemplo, Revolico publica pocas habitaciones en el campo, pero el texto del anuncio "
+        "eleva la cobertura de análisis.\n\n"
+        + sources.to_markdown(index=False)
+        + "\n\n## Cobertura del dato de análisis por fuente\n\n"
+        "Mejor dato disponible después de leer texto, página y slug. `municipio_homologado_pct` "
+        "solo cuenta los 15 municipios de La Habana; las zonas o barrios de Cubisima quedan fuera "
+        "de esa columna y se conservan en `ubicacion_analisis_pct`.\n\n"
+        + coverage.to_markdown(index=False)
+        + "\n\n## Comparativo por canal\n\n"
+        "`con_fecha_publicada_pct` mide el campo publicado; `con_fecha_analisis_pct` suma la fecha "
+        "recuperada de la página de Revolico. Son coberturas distintas.\n\n"
+        + channels.to_markdown(index=False)
+        + "\n",
         encoding="utf-8",
     )
     print(f"\nResumen guardado en: {md}")
