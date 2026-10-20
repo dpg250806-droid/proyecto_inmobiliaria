@@ -122,8 +122,8 @@ def code_row(row: pd.Series) -> dict:
     all_text = plain_text(joined)
     codes = {
         "C1_necesidad_economica": int(any(k in all_text for k in ("dinero", "necesidad", "urgencia", "misera"))),
-        "C2_migracion": int(any(k in all_text for k in ("migra", "travesia", "nicaragua"))),
-        "C3_moneda_tasa": int(any(k in all_text for k in ("usd", "cup", "tasas", "moneda"))),
+        "C2_migracion": int(any(k in all_text for k in ("migra", "travesia", "nicaragua", "salir del pais", "irse del pais"))),
+        "C3_moneda_tasa": int(any(k in all_text for k in ("usd", "cup", "tasa", "moneda", "divisa", "dolar", "euro", "mlc"))),
         "C4_canal_venta": int(any(k in all_text for k in ("telegram", "whatsapp", "facebook", "grupo"))),
         "C5_precio_alto": int(any(k in all_text for k in ("caro", "carisimo", "regalo", "valor"))),
         "C6_caracteristicas": int(any(k in all_text for k in ("m2", "metro", "bano", "banos", "piscina"))),

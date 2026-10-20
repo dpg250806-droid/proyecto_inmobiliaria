@@ -1063,12 +1063,18 @@ class ProcesarEntrevistasTests(unittest.TestCase):
         row = pd.Series({
             "evolucion_precios": "La travesía por Nicaragua y la emigración",
             "factores_precio": "los banos y la piscina",
+            "influencia_tasas": "todo se rige por la tasa de cambio",
             "municipio": "Diez de Octubre",
         })
         codes = code_row(row)
         self.assertEqual(codes["C2_migracion"], 1)   # "travesía" acentuada
+        self.assertEqual(codes["C3_moneda_tasa"], 1)  # "tasa" en singular
         self.assertEqual(codes["C6_caracteristicas"], 1)  # "banos" sin tilde
         self.assertEqual(codes["C7_municipio"], 1)   # municipio fuera de la lista vieja
+
+    def test_code_row_migracion_sin_palabra_migra(self):
+        row = pd.Series({"influencia_migracion": "vender para poder salir del país"})
+        self.assertEqual(code_row(row)["C2_migracion"], 1)
 
     def test_load_responses_formatos(self):
         with self.assertRaises(FileNotFoundError):

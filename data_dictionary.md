@@ -142,8 +142,8 @@ El export anónimo del formulario (CSV o XLSX) se procesa sin persistir jamás m
 | Código | Criterio |
 |---|---|
 | `C1_necesidad_economica` | dinero, necesidad, urgencia o miseria |
-| `C2_migracion` | migra*, travesía, Nicaragua |
-| `C3_moneda_tasa` | USD, CUP, tasas o moneda |
+| `C2_migracion` | migra*, travesía, Nicaragua, salir del país, irse del país |
+| `C3_moneda_tasa` | USD, CUP, tasa(s), moneda, divisa, dólar, euro, MLC |
 | `C4_canal_venta` | Telegram, WhatsApp, Facebook o grupo |
 | `C5_precio_alto` | caro, carísimo, regalo o valor |
 | `C6_caracteristicas` | m2, metro, baño(s) o piscina |
