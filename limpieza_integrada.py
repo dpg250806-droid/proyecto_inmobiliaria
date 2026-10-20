@@ -37,11 +37,11 @@ def main():
     frame["ubicacion_normalizada"] = ubicacion_base.map(normalizar_ubicacion)
     frame["precio_original"] = pd.to_numeric(frame["precio_original"], errors="coerce")
     # Habitaciones y banos de analisis (texto del anuncio, campo publicado o slug);
-    # `detalle_analisis` cae al campo publicado si el maestro no trae reextraccion.
+    # se guardan en columnas propias para no sobrescribir el campo publicado.
     # La superficie (m2) queda fuera del analisis: ninguna fuente la publica al 100%.
     (
-        frame["habitaciones"],
-        frame["banos"],
+        frame["habitaciones_analisis"],
+        frame["banos_analisis"],
         _,
         _,
     ) = detalle_analisis(frame)
@@ -62,11 +62,13 @@ def main():
 
     summary = frame.groupby(["fuente", "canal_analisis"]).agg(
         anuncios=("precio_original", "size"),
-        precio_valido=("precio_original", lambda s: pd.notna(s).sum()),
-        precio_analisis=("precio_analisis", lambda s: pd.notna(s).sum()),
+        precio_publicado=("precio_original", lambda s: int(pd.notna(s).sum())),
+        precio_analisis=("precio_analisis", lambda s: int(pd.notna(s).sum())),
         sospechosos=("precio_sospechoso", lambda s: int(s.sum())),
-        habitaciones=("habitaciones", lambda s: pd.notna(s).sum()),
-        banos=("banos", lambda s: pd.notna(s).sum()),
+        habitaciones_publicadas=("habitaciones", lambda s: int(pd.notna(s).sum())),
+        habitaciones_analisis=("habitaciones_analisis", lambda s: int(pd.notna(s).sum())),
+        banos_publicados=("banos", lambda s: int(pd.notna(s).sum())),
+        banos_analisis=("banos_analisis", lambda s: int(pd.notna(s).sum())),
     ).reset_index()
     summary.to_csv(OUT / f"resumen_limpieza_integrada_{stamp}.csv", index=False, encoding="utf-8-sig")
 

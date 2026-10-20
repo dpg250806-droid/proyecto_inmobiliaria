@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from precio_moneda import detalle_analisis, precios_analisis
+from ubicaciones import homologar_municipio
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -314,6 +315,38 @@ def excluir_no_residenciales(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
         return frame, frame.iloc[0:0]
     mascara = frame["veredicto_revision"].fillna("").astype(str).str.strip().str.lower().isin(NO_RESIDENCIALES)
     return frame.loc[~mascara].copy(), frame.loc[mascara].copy()
+
+
+EXCLUSIONES_ALCANCE_POR_DEFECTO = REPO_ROOT / "revision_manual" / "exclusiones_alcance.csv"
+
+
+def excluir_fuera_de_alcance(
+    frame: pd.DataFrame, ruta: Path | None = EXCLUSIONES_ALCANCE_POR_DEFECTO
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Separa anuncios fuera de La Habana o que no son una vivienda.
+
+    La lista se versiona en `revision_manual/exclusiones_alcance.csv` y se
+    empareja por URL exacta (el `id_local` de Revolico incluye la URL y puede
+    cambiar si se reextrae). Devuelve `(dataset_filtrado, excluidos)`; los
+    excluidos conservan todas sus columnas y reciben `motivo_alcance`.
+    """
+    if ruta is None or not Path(ruta).exists() or frame.empty:
+        return frame.copy(), frame.iloc[0:0].copy()
+
+    lista = pd.read_csv(ruta, dtype=str).fillna("")
+    faltantes = {"url", "motivo"} - set(lista.columns)
+    if faltantes:
+        raise ValueError(f"{ruta} no tiene las columnas requeridas: {sorted(faltantes)}")
+    lista = lista[lista["url"].str.strip().ne("")].copy()
+    motivos = (
+        lista.drop_duplicates("url").set_index("url")["motivo"].str.strip().to_dict()
+    )
+    urls = set(motivos)
+    mascara = frame["url"].fillna("").astype(str).str.strip().isin(urls)
+    excluidos = frame.loc[mascara].copy()
+    if not excluidos.empty:
+        excluidos["motivo_alcance"] = excluidos["url"].astype(str).str.strip().map(motivos)
+    return frame.loc[~mascara].copy(), excluidos
 
 
 RUTAS_REVISION_POR_DEFECTO = (
@@ -642,14 +675,15 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         merged = merged.drop(columns=["_quality_key"])
 
     merged = aplicar_veredictos_revision(merged)
+    carpeta = root / "outputs" / "integracion"
+    carpeta.mkdir(parents=True, exist_ok=True)
+    marca = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     merged, no_residenciales = excluir_no_residenciales(merged)
     if not no_residenciales.empty:
         # Evidencia de la exclusion: las filas quedan en su propio CSV fechado
         # y solo desaparecen del maestro derivado; ninguna fuente original se
         # modifica.
-        carpeta = root / "outputs" / "integracion"
-        carpeta.mkdir(parents=True, exist_ok=True)
-        marca = datetime.now().strftime("%Y%m%d_%H%M%S")
         ruta_exclusion = carpeta / f"anuncios_no_residenciales_{marca}.csv"
         no_residenciales.to_csv(ruta_exclusion, index=False, encoding="utf-8-sig")
         motivos = {motivo: int(cantidad) for motivo, cantidad in no_residenciales["veredicto_revision"].value_counts().items()}
@@ -657,15 +691,35 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
             f"Excluidos del dataset por no ser vivienda en venta: "
             f"{len(no_residenciales)} anuncios {motivos} -> {ruta_exclusion.name}"
         )
+
+    merged, fuera_alcance = excluir_fuera_de_alcance(merged)
+    if not fuera_alcance.empty:
+        ruta_alcance = carpeta / f"anuncios_fuera_de_alcance_{marca}.csv"
+        fuera_alcance.to_csv(ruta_alcance, index=False, encoding="utf-8-sig")
+        motivos = {
+            motivo: int(cantidad)
+            for motivo, cantidad in fuera_alcance["motivo_alcance"].value_counts().items()
+        }
+        print(
+            f"Excluidos del dataset por alcance (fuera de La Habana o no vivienda): "
+            f"{len(fuera_alcance)} anuncios {motivos} -> {ruta_alcance.name}"
+        )
+
     merged = aplicar_metadatos_revolico(merged)
     merged = aplicar_detalle_anuncios(merged)
     merged["precio_analisis"], merged["moneda_analisis"] = precios_analisis(merged)
     merged["origen_precio"] = "excluido"
     merged.loc[merged["precio_analisis"].notna(), "origen_precio"] = "campo_publicado"
-    merged.loc[merged["precio_reextraido"].notna(), "origen_precio"] = "reextraccion_manual"
+    merged.loc[
+        merged["precio_analisis"].notna() & merged["precio_reextraido"].notna(),
+        "origen_precio",
+    ] = "reextraccion_manual"
     # Ubicacion de analisis: municipio verificado en la pagina del anuncio primero,
     # campo publicado despues; vacio en el resto. No se imputa.
     merged["ubicacion_analisis"], merged["origen_ubicacion"] = ubicacion_analisis(merged)
+    # Municipio homologado: solo los 15 municipios de La Habana; las zonas o
+    # barrios que no son municipio quedan vacios (no se imputa).
+    merged["municipio_homologado"] = merged["ubicacion_analisis"].map(homologar_municipio)
     # Habitaciones y banos de analisis: texto del anuncio primero, campo publicado
     # despues, slug del enlace al final; vacio si nada lo dice. No se imputa.
     (
@@ -694,6 +748,7 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         "evidencia_metadatos",
         "ubicacion_analisis",
         "origen_ubicacion",
+        "municipio_homologado",
         "habitaciones_reextraido",
         "banos_reextraido",
         "habitaciones_slug",
@@ -726,9 +781,11 @@ def main():
 
     summary = frame.groupby(["fuente", "moneda", "canal"], dropna=False).agg(
         anuncios=("id_maestro", "count"),
-        banos_disponibles=("banos", lambda s: int(pd.notna(s).sum())),
-        habitaciones_disponibles=("habitaciones", lambda s: int(pd.notna(s).sum())),
-        precio_sospechoso=("precio_sospechoso", lambda s: int(pd.notna(s).sum())),
+        precio_publicado=("precio_original", lambda s: int(pd.notna(s).sum())),
+        precio_analisis=("precio_analisis", lambda s: int(pd.notna(s).sum())),
+        precio_sospechoso=("precio_sospechoso", lambda s: int(s.sum())),
+        habitaciones_publicadas=("habitaciones", lambda s: int(pd.notna(s).sum())),
+        banos_publicados=("banos", lambda s: int(pd.notna(s).sum())),
     ).reset_index()
     summary_path = out_dir / f"resumen_integracion_{stamp}.csv"
     summary.to_csv(summary_path, index=False, encoding="utf-8-sig")
