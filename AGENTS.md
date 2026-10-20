@@ -96,4 +96,20 @@ Analizar el mercado inmobiliario de La Habana a partir de anuncios reales, disti
 - Reportar ausencias, outliers y sesgos.
 - Incluir limitaciones en el informe final.
 - No presentar análisis que no pueda justificarse con los datos disponibles.
-PY
+
+## Decisiones vigentes (20/10/2026)
+
+Reglas ya aplicadas que deben mantenerse en cualquier tarea nueva:
+
+- **Alcance**: el maestro excluye 6 anuncios no residenciales y 28 fuera de alcance (13 fuera de La Habana, 15 no vivienda). Las exclusiones se auditan por URL en `revision_manual/exclusiones_alcance.csv`; 14 anuncios de alcance dudoso se conservan y se listan en `revision_manual/alcance_dudoso.csv`.
+- **Municipios**: solo se homologan los 15 municipios de La Habana (`ubicaciones.py`). Las zonas o barrios de Cubisima no se imputan como municipio.
+- **Precios**: `precio_original`/`moneda` conservan lo publicado; `precio_analisis`/`moneda_analisis` usan la reextracción manual verificada y excluyen lo sospechoso. No se corrige el campo publicado.
+- **EUR**: se conserva en euros porque la descripción del vendedor lo dice literalmente, aunque el JSON-LD de HogarEnCuba indique USD; el conflicto se documenta y no se interpreta (n=3).
+- **CUP**: queda marcado como sospechoso y fuera de toda conversión.
+- **CUC**: solo se convierte con la paridad nominal declarada 1 CUC = 1 USD, nunca como tasa de mercado.
+- **Superficie (m²)**: fuera del análisis; ninguna fuente la publica de forma sistemática.
+- **Gráficos y tablas**: excluir monedas con n<5, combinaciones fuente-moneda con n<10 y grupos con n<5, anotando las exclusiones en la propia figura.
+- **Segmentación**: terciles (33/66), no cuartiles. **Clustering**: k=3 por moneda, con etiquetas económico/medio/alto ordenadas por mediana.
+- **Sesgo de disponibilidad**: 153 anuncios de Revolico ya no son accesibles; se marcan con su ventana de despublicación y no se descartan.
+- **Tiempo**: sin serie temporal de precios; no se atribuye la evolución ni el efecto de la migración de forma cuantitativa.
+- **Informe final**: no se redacta sin autorización expresa del usuario.

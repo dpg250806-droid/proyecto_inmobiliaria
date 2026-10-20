@@ -27,10 +27,8 @@ CSV_PRINCIPALES = [
     "anuncios_revolico_excluidos.csv",
     "datos_revolico_json.csv",
 ]
-CSV_EJEMPLO = [
-    "viviendas.csv",
-    "viviendas_limpias.csv",
-]
+# `viviendas.csv` y `viviendas_limpias.csv` eran fixtures inventados de un script de
+# demostracion; se eliminaron el 2026-10-20 y ya no se esperan.
 
 
 def hasha_archivo(ruta: Path) -> str:
@@ -76,7 +74,7 @@ def principal() -> None:
     salida_dir.mkdir(parents=True, exist_ok=True)
     reporte = salida_dir / f"auditoria_revolico_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
 
-    todas = CSV_PRINCIPALES + CSV_EJEMPLO
+    todas = CSV_PRINCIPALES
     disponibles = [nombre for nombre in todas if (RAIZ / nombre).exists()]
     faltantes = [nombre for nombre in todas if not (RAIZ / nombre).exists()]
 
@@ -308,31 +306,91 @@ def principal() -> None:
     else:
         lineas.append("No se encontro `enlaces_anuncios_revolico.csv`.")
 
-    lineas.append("## 8. Comparacion con Cubisima (sin integracion)")
+    lineas.append("## 8. Estado de la integracion (maestro vigente)")
     lineas.append("")
-    lineas.append("El repositorio contiene archivos untracked de Cubisima (`scraper_cubisima.py`, `viviendas_cubisima.csv`, etc.). No se han integrado al proyecto principal en esta etapa. Solo se reporta su existencia para evitar confusion en la trazabilidad.")
-    if "viviendas_cubisima.csv" in dataframes and dataframes["viviendas_cubisima.csv"] is not None:
-        cub = dataframes["viviendas_cubisima.csv"]
+    maestros = sorted((RAIZ / "outputs" / "integracion").glob("dataset_maestro_*.csv"))
+    if not maestros:
+        lineas.append("No se encontro ningun maestro en `outputs/integracion/`.")
         lineas.append("")
-        lineas.append(f"- `viviendas_cubisima.csv`: {len(cub)} filas x {len(cub.columns)} columnas (archivo untracked, no integrado).")
+    else:
+        maestro_path = maestros[-1]
+        maestro = leer_csv(maestro_path)
+        lineas.append(f"Maestro: `{maestro_path.name}`.")
+        lineas.append("")
+        if maestro is not None:
+            filas = []
+            for fuente, grupo in maestro.groupby("fuente"):
+                fecha_analisis = grupo["fecha_publicacion"].fillna("").astype(str).str.strip().ne("")
+                if "fecha_reextraida" in grupo.columns:
+                    fecha_analisis = fecha_analisis | grupo["fecha_reextraida"].fillna("").astype(str).str.strip().ne("")
+                filas.append({
+                    "fuente": fuente,
+                    "anuncios": len(grupo),
+                    "precio_analisis": int(pd.to_numeric(grupo["precio_analisis"], errors="coerce").notna().sum()),
+                    "habitaciones_analisis": int(pd.to_numeric(grupo["habitaciones_analisis"], errors="coerce").notna().sum()),
+                    "banos_analisis": int(pd.to_numeric(grupo["banos_analisis"], errors="coerce").notna().sum()),
+                    "municipio_homologado": int(grupo["municipio_homologado"].fillna("").astype(str).str.strip().ne("").sum()),
+                    "fecha_analisis": int(fecha_analisis.sum()),
+                })
+            lineas.append(fmt_tabla(filas))
+            lineas.append("")
+            lineas.append(
+                f"- Filas: {len(maestro)}; columnas: {len(maestro.columns)}; "
+                f"`id_maestro` duplicados: {int(maestro['id_maestro'].duplicated().sum())}; "
+                f"URLs duplicadas: {int(maestro['url'].duplicated().sum())}."
+            )
+            lineas.append(
+                f"- Anuncios sin precio de analisis: "
+                f"{int(pd.to_numeric(maestro['precio_analisis'], errors='coerce').isna().sum())}."
+            )
+            if "estado_anuncio" in maestro.columns:
+                rev = maestro[maestro["fuente"].eq("Revolico")]
+                if not rev.empty:
+                    estados = rev["estado_anuncio"].replace("", "SIN_ESTADO").value_counts().to_dict()
+                    lineas.append(f"- Estado de los anuncios de Revolico: {estados}.")
+            lineas.append("")
+
+    lineas.append("### Decisiones manuales auditadas")
+    lineas.append("")
+    for nombre, descripcion in [
+        ("precios_bajos.csv", "precios suspiciously bajos revisados uno a uno"),
+        ("precios_ausentes.csv", "veredictos de la busqueda de precios ausentes"),
+        ("exclusiones_alcance.csv", "exclusiones por alcance (fuera de La Habana o no vivienda)"),
+        ("alcance_dudoso.csv", "anuncios de alcance dudoso conservados en el maestro"),
+    ]:
+        ruta = RAIZ / "revision_manual" / nombre
+        if not ruta.exists():
+            lineas.append(f"- `{nombre}`: no encontrado.")
+            continue
+        marco = leer_csv(ruta)
+        filas = len(marco) if marco is not None else "ERROR"
+        lineas.append(f"- `{nombre}`: {filas} filas ({descripcion}).")
     lineas.append("")
 
     lineas.append("## 9. Limitaciones y datos no verificados")
     lineas.append("")
-    lineas.append("- El corpus se basa en 8 paginas HTML descargadas manualmente de Revolico; no se verifico muestreo probabilistico ni cobertura completa del sitio.")
-    lineas.append("- Los precios provienen del titulo y pueden incluir telefonos u otros numeros; aun no se habian verificado contra el texto individual del anuncio.")
-    lineas.append("- `municipio` y `habitaciones` presentan ausencias altas porque solo se extrajeron patrones del titulo.")
-    lineas.append("- `texto_tarjeta` esta contaminado por contenedores compartidos; sus conteos son orientativos, no features validados.")
-    lineas.append("- `datos_revolico_json.csv` no corresponde a viviendas exclusivamente y no fue usado como fuente principal.")
-    lineas.append("- No se verificaron las paginas individuales de anuncios, por lo que no se confirmo la disponibilidad de baños, m2, planta, garaje o fecha.")
-    lineas.append("- No se ejecuto limpieza, deduplicacion robusta ni analisis estadistico/visual mas alla de conteos.")
-    lineas.append("- No se comprobo correspondencia entre CSV y commit concreto; las paginas HTML estan ignoradas por Git.")
-    lineas.append("- No se integraron archivos de Cubisima en esta auditoria.")
+    lineas.append("- El corpus de Revolico se basa en 8 paginas HTML descargadas manualmente; no es un muestreo probabilistico ni cubre el sitio completo.")
+    lineas.append("- Los precios publicados en el titulo pueden contener telefonos u otros numeros; el precio de analisis usa la reextraccion manual verificada y excluye los marcados como sospechosos.")
+    lineas.append("- `municipio` y `habitaciones` del CSV procesado tienen ausencias altas porque solo se extrajeron patrones del titulo; el maestro mejora la cobertura con la ficha individual del anuncio.")
+    lineas.append("- `texto_tarjeta` esta contaminado por contenedores compartidos: sus conteos son orientativos y no son features validados.")
+    lineas.append("- `datos_revolico_json.csv` no corresponde solo a vivienda y se conserva como diagnostico, no como fuente de precio.")
+    lineas.append("- 153 de los 755 anuncios de Revolico ya no son accesibles (80 despublicados, 73 eliminados): la ventana de despublicacion es un limite con evidencia, no una fecha exacta.")
+    lineas.append("- 122 anuncios del maestro siguen sin precio verificable y 14 tienen alcance dudoso: no se imputa ningun valor.")
+    lineas.append("- El m2 se excluye del analisis: ninguna fuente lo publica de forma sistematica.")
+    lineas.append("- Las tasas de cambio son del 15/10/2026 (ElToque bloqueado) y estan desactualizadas respecto del corte: las conversiones son ilustrativas.")
+    lineas.append("- No se comprobo correspondencia entre los CSV y un commit concreto; las paginas HTML estan ignoradas por Git.")
     lineas.append("")
 
     lineas.append("## 10. Conclusion")
     lineas.append("")
-    lineas.append("La base actual tiene un flujo funcional, pero la calidad para una investigacion rigurosa depende de mejorar la extraccion individual por anuncio, validar precios y reducir ausencias de municipio/habitaciones. Antes de continuar, se recomienda revisar este informe y aprobar las modificaciones no destructivas de la siguiente etapa.")
+    lineas.append(
+        "El flujo de trabajo es reproducible y auditable de punta a punta: listado guardado, extraccion "
+        "por anuncio, revision manual con citas, integracion no destructiva con exclusiones de alcance "
+        "documentadas, y analisis que separa publicado de analisis y separa monedas. Las limitaciones "
+        "que quedan abiertas son de naturaleza de datos, no de proceso: cobertura parcial de tamano y "
+        "fecha, sesgo de disponibilidad, 122 precios sin verificar, 14 anuncios de alcance dudoso y "
+        "tasas desactualizadas. Ninguna se resuelve por imputacion: se reportan."
+    )
     lineas.append("")
 
     reporte.write_text("\n".join(lineas), encoding="utf-8")
