@@ -130,7 +130,11 @@ def seccion_entrevistas() -> list[str]:
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     master_path = latest(MASTER_DIR, "dataset_maestro_*.csv")
-    conversion_path = latest(CONV_DIR, "dataset_maestro_conversion_*.csv")
+    # La conversion con tasas y la nominal de CUC son archivos distintos: la
+    # primera deja CUC sin tasa; la segunda anade la paridad nominal 1:1.
+    conversion_path = latest(CONV_DIR, "dataset_maestro_conversion_2*.csv")
+    nominal_files = sorted(CONV_DIR.glob("dataset_maestro_conversion_cuc_nominal_*.csv"))
+    nominal_path = nominal_files[-1] if nominal_files else None
     master = pd.read_csv(master_path, dtype=str)
     conversion = pd.read_csv(conversion_path, dtype=str)
 
@@ -155,6 +159,14 @@ def main():
         _,
         _,
     ) = detalle_analisis(master)
+    if "municipio_homologado" not in master.columns:
+        master["municipio_homologado"] = ""
+    master["municipio_homologado"] = master["municipio_homologado"].fillna("").astype(str).str.strip()
+    # Fecha de analisis: fecha publicada o, en Revolico, fecha recuperada de la pagina.
+    master["fecha_analisis"] = (
+        master["fecha_publicacion"].fillna("").astype(str).str.strip().ne("")
+        | master["fecha_reextraida"].fillna("").astype(str).str.strip().ne("")
+    )
     price_data = master[
         master["precio_analisis"].notna()
         & master["moneda_analisis"].ne("SIN_MONEDA")
@@ -197,16 +209,98 @@ def main():
     lines.append("")
 
     lines.append("## 1. Precio central por fuente y moneda")
-    stats = price_data.groupby(["fuente", "moneda_analisis"])["precio_analisis"].agg(["count", "median", "mean", "min", "max"]).reset_index()
+    stats = (
+        price_data.groupby(["fuente", "moneda_analisis"])["precio_analisis"]
+        .agg(["count", "median", "mean", "min", "max"])
+        .reset_index()
+        .rename(
+            columns={
+                "count": "anuncios",
+                "median": "mediana",
+                "mean": "media",
+                "min": "minimo",
+                "max": "maximo",
+            }
+        )
+    )
+    for columna in ["mediana", "minimo", "maximo"]:
+        stats[columna] = stats[columna].round(0).astype("Int64")
+    stats["media"] = stats["media"].round(1)
     lines.append(stats.to_markdown(index=False))
+    lines.append(
+        "\nLa mediana es el centro robusto de cada grupo; la media se desplaza por valores extremos "
+        "(por ejemplo, HogarEnCuba USD). No se comparan importes entre monedas. Las filas con n<10 "
+        "(Cubisima USD n=8; EUR n=1 por fuente) se muestran para trazabilidad y no se interpretan."
+    )
     lines.append("")
 
-    lines.append("## 2. Precio por municipio/zona (top 10 por moneda, cobertura suficiente)")
-    muni = price_data[price_data["ubicacion_analisis"].fillna("").astype(str).str.strip().ne("")]
-    muni = muni.groupby(["fuente", "moneda_analisis", "ubicacion_analisis"]).agg(anuncios=("precio_analisis", "count"), mediana=("precio_analisis", "median")).reset_index()
-    muni = muni[muni["anuncios"] >= 5]
-    muni = muni.sort_values(["moneda_analisis", "mediana"], ascending=[True, False]).groupby("moneda_analisis", group_keys=False).head(10)
-    lines.append(muni.to_markdown(index=False) if not muni.empty else "Sin suficentes datos.")
+    lines.append("## 2. Precio por municipio homologado y por zona")
+    municipios = price_data[price_data["municipio_homologado"].ne("")]
+    if not municipios.empty:
+        muni = municipios.groupby(["fuente", "moneda_analisis", "municipio_homologado"]).agg(
+            anuncios=("precio_analisis", "count"),
+            mediana=("precio_analisis", "median"),
+        ).reset_index()
+        muni = muni[muni["anuncios"] >= 5].sort_values(
+            ["moneda_analisis", "fuente", "mediana"], ascending=[True, True, False]
+        )
+        lines.append(
+            "Municipios de La Habana homologados (solo los 15 municipios; n>=5 por fuente y moneda). "
+            "Las zonas o barrios que no son municipio quedan en la tabla siguiente y no se imputan. "
+            "La tabla por fuente es la comparación válida; no se suma con la tabla de zonas:"
+        )
+        lines.append(muni.to_markdown(index=False) if not muni.empty else "Sin datos suficientes.")
+        lines.append("")
+        usd_muni = muni[muni["moneda_analisis"].eq("USD")]
+        if {"Revolico", "HogarEnCuba"}.issubset(set(usd_muni["fuente"])):
+            piv = usd_muni.pivot(index="municipio_homologado", columns="fuente", values="mediana")
+            npiv = usd_muni.pivot(index="municipio_homologado", columns="fuente", values="anuncios")
+            comunes = piv.dropna(subset=["Revolico", "HogarEnCuba"])
+            if not comunes.empty:
+                comparacion = pd.DataFrame(
+                    {
+                        "municipio": comunes.index,
+                        "mediana_revolico": comunes["Revolico"].values,
+                        "n_revolico": npiv.loc[comunes.index, "Revolico"].values,
+                        "mediana_hogarencuba": comunes["HogarEnCuba"].values,
+                        "n_hogarencuba": npiv.loc[comunes.index, "HogarEnCuba"].values,
+                    }
+                )
+                comparacion["diferencia_pct"] = (
+                    (comparacion["mediana_hogarencuba"] / comparacion["mediana_revolico"] - 1) * 100
+                ).round(1)
+                comparacion = comparacion.sort_values("mediana_revolico", ascending=False)
+                lines.append(
+                    "Comparación directa USD en municipios con n>=5 en ambas fuentes. La diferencia es "
+                    "descriptiva, no causal: refleja composición y selección de anuncios, no un precio "
+                    "único de mercado:"
+                )
+                lines.append(comparacion.to_markdown(index=False))
+                lines.append("")
+    else:
+        lines.append("Sin municipios homologados en el maestro actual.")
+    lines.append("")
+
+    zonas = price_data[
+        price_data["fuente"].eq("Cubisima")
+        & price_data["ubicacion_analisis"].fillna("").astype(str).str.strip().ne("")
+    ]
+    if not zonas.empty:
+        zona = zonas.groupby(["moneda_analisis", "ubicacion_analisis"]).agg(
+            anuncios=("precio_analisis", "count"),
+            mediana=("precio_analisis", "median"),
+        ).reset_index()
+        zona = zona[zona["anuncios"] >= 10]
+        zona = zona.sort_values(["moneda_analisis", "mediana"], ascending=[True, False]).groupby(
+            "moneda_analisis", group_keys=False
+        ).head(10)
+        lines.append(
+            "Zonas o barrios de Cubisima (n>=10; se muestran las 10 medianas más altas por moneda). "
+            "No son municipios: se muestran aparte para no mezclar niveles geográficos. Algunos "
+            "nombres coinciden con municipios (Playa, Habana Vieja, Centro Habana), pero se conserva "
+            "la etiqueta declarada por Cubisima."
+        )
+        lines.append(zona.to_markdown(index=False) if not zona.empty else "Sin datos suficientes.")
     lines.append("")
 
     if "fecha_reextraida" in master.columns:
@@ -221,10 +315,18 @@ def main():
             )
             frescura = fechas.groupby("mes_actualizacion").agg(anuncios=("id_maestro", "count")).reset_index()
             lines.append(
-                f"Los {len(fechas)} anuncios de Revolico con fecha de pagina (`updatedOnByUser`) van del "
+                f"Los {len(fechas)} anuncios de Revolico con fecha de página (`updatedOnByUser`) van del "
                 f"{fechas['mes_actualizacion'].min()} al {fechas['mes_actualizacion'].max()}. "
-                "Es la fecha de la ultima actualizacion del anuncio, no la de creacion ni la de venta; "
-                "por tanto mide cuan frescos estan los anuncios, no cuando se cerraron operaciones."
+                "Es la fecha de la última actualización del anuncio, no la de creación ni la de venta; "
+                "por tanto mide cuán frescos están los anuncios, no cuándo se cerraron operaciones."
+            )
+            recientes = int(
+                fechas["mes_actualizacion"].isin(["2026-08", "2026-09", "2026-10"]).sum()
+            )
+            lines.append(
+                f"Del total, {recientes} de {len(fechas)} se actualizaron entre 2026-08 y 2026-10; "
+                "la muestra temporal es casi toda de 2026, no un panel 2020-2026. No se usa para "
+                "atribuir evolucion de precios."
             )
             lines.append("")
             lines.append(frescura.tail(12).to_markdown(index=False))
@@ -237,32 +339,89 @@ def main():
     if not associations.empty:
         lines.append("Correlacion de Spearman descriptiva, separada por fuente y moneda (n minimo 5):")
         lines.append(associations.to_markdown(index=False))
+        lines.append(
+            "\nLas filas con 5 <= n < 10 son exploratorias y no se usan como evidencia en el informe; "
+            "se conservan para trazabilidad. La correlacion no implica causalidad y puede estar "
+            "afectada por la cobertura parcial de habitaciones y banos."
+        )
     else:
         lines.append("No hay pares completos suficientes para estimar asociaciones.")
     lines.append("")
     hab = price_data[price_data["habitaciones_analisis"].notna()].groupby(["fuente", "moneda_analisis", "habitaciones_analisis"])["precio_analisis"].agg(["count", "median"]).reset_index()
     lines.append("Medianas observadas por cantidad de habitaciones (mejor dato disponible: texto del anuncio, campo publicado o enlace):")
     lines.append(hab.to_markdown(index=False) if not hab.empty else "Sin pares completos.")
+    lines.append(
+        "\nLas celdas con n<5 se muestran para trazabilidad, pero no se interpretan: una mediana con "
+        "una o dos observaciones no es un patron."
+    )
     lines.append("")
     baths = price_data[price_data["banos_analisis"].notna()].groupby(["fuente", "moneda_analisis", "banos_analisis"])["precio_analisis"].agg(["count", "median"]).reset_index()
     lines.append("Medianas observadas por cantidad de banos (mejor dato disponible: texto del anuncio, campo publicado o enlace):")
     lines.append(baths.to_markdown(index=False) if not baths.empty else "Sin pares completos.")
+    lines.append(
+        "\nLas celdas con n<5 se muestran para trazabilidad, pero no se interpretan. Los banos tienen "
+        "menos cobertura que las habitaciones, sobre todo en Revolico."
+    )
     lines.append("")
 
     lines.append("## 4. Características más frecuentes en viviendas caras")
+    lines.append(
+        "Solo Cubisima publica las características auxiliares (garaje, piscina, terraza, patio, "
+        "balcón, jardín); Revolico y HogarEnCuba no las ofrecen de forma sistemática. Se compara "
+        "el tercio superior de precio con el resto dentro de cada moneda. Es una asociación "
+        "descriptiva, no causal. Un 0 significa que la característica no fue declarada en la ficha, "
+        "no necesariamente que no exista."
+    )
     cub = price_data[price_data["fuente"] == "Cubisima"]
-    for currency, currency_rows in cub.groupby("moneda_analisis"):
-        high = currency_rows[currency_rows["precio_analisis"] >= currency_rows["precio_analisis"].median()]
-        lines.append(f"Moneda **{currency}**: {len(high)} anuncios en o sobre la mediana de esa moneda.")
-        for feature in ["garaje", "piscina", "terraza", "patio", "balcon", "jardin"]:
-            if feature in high.columns:
-                present = high[feature].astype(str).str.strip().str.lower().isin(["1", "true", "si", "sí", "yes"])
-                lines.append(f"- **{feature}**: {int(present.sum())} de {len(high)} anuncios")
     if cub.empty:
         lines.append("Sin precios Cubisima utilizables con moneda identificada.")
+    else:
+        def porcentaje_presente(series):
+            return round(
+                100
+                * series.astype(str).str.strip().str.lower().isin(["1", "true", "si", "sí", "yes"]).mean(),
+                1,
+            )
+
+        for currency, currency_rows in cub.groupby("moneda_analisis"):
+            if len(currency_rows) < 10:
+                lines.append(f"Moneda **{currency}**: n={len(currency_rows)}; no se calcula el tercio superior.")
+                continue
+            corte = currency_rows["precio_analisis"].quantile(0.66)
+            alto = currency_rows[currency_rows["precio_analisis"] >= corte]
+            resto = currency_rows[currency_rows["precio_analisis"] < corte]
+            lines.append(
+                f"Moneda **{currency}**: tercio superior n={len(alto)} (precio >= {corte:,.0f}); "
+                f"resto n={len(resto)}."
+            )
+            filas = []
+            etiquetas_caracteristicas = {
+                "garaje": "Garaje",
+                "piscina": "Piscina",
+                "terraza": "Terraza",
+                "patio": "Patio",
+                "balcon": "Balcón",
+                "jardin": "Jardín",
+            }
+            for feature in ["garaje", "piscina", "terraza", "patio", "balcon", "jardin"]:
+                if feature not in currency_rows.columns:
+                    continue
+                pct_alto = porcentaje_presente(alto[feature])
+                pct_resto = porcentaje_presente(resto[feature])
+                filas.append(
+                    {
+                        "caracteristica": etiquetas_caracteristicas.get(feature, feature),
+                        "pct_tercio_superior": pct_alto,
+                        "pct_resto": pct_resto,
+                        "diferencia_pp": round(pct_alto - pct_resto, 1),
+                    }
+                )
+            if filas:
+                lines.append(pd.DataFrame(filas).sort_values("diferencia_pp", ascending=False).to_markdown(index=False))
+            lines.append("")
     lines.append("")
 
-    lines.append("## 5. Comparacion entre canales (informal vs estructurado)")
+    lines.append("## 5. Comparación entre canales (informal vs estructurado)")
     def canal(row):
         if row["fuente"] == "Revolico":
             return "Informal - Revolico"
@@ -270,23 +429,40 @@ def main():
             return "Estructurado - Cubisima"
         return "Estructurado - HogarEnCuba"
     master["canal"] = master.apply(canal, axis=1)
+    price_data["canal"] = price_data.apply(canal, axis=1)
     by_channel = price_data.groupby(["canal", "moneda_analisis"]).agg(
         anuncios=("precio_analisis", "count"),
         mediana_precio=("precio_analisis", "median"),
         con_habitaciones=("habitaciones_analisis", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
         con_banos=("banos_analisis", lambda s: pd.to_numeric(s, errors="coerce").notna().sum()),
-        fecha_pct=("fecha_publicacion", lambda s: round(100 * pd.notna(s).mean(), 1)),
+        fecha_publicada_pct=("fecha_publicacion", lambda s: round(100 * pd.notna(s).mean(), 1)),
+        fecha_analisis_pct=("fecha_analisis", lambda s: round(100 * s.mean(), 1)),
     ).reset_index()
     lines.append(by_channel.to_markdown(index=False))
+    lines.append(
+        "\n`fecha_publicada_pct` mide el campo publicado; `fecha_analisis_pct` suma la fecha de "
+        "actualización recuperada de la página individual en Revolico. No son equivalentes."
+    )
     lines.append("")
     common_currency = (
         price_data.groupby("moneda_analisis")["fuente"].nunique().loc[lambda values: values > 1].index.tolist()
     )
     lines.append(
-        "Monedas observadas en mas de una fuente: "
+        "Monedas observadas en más de una fuente: "
         + (", ".join(common_currency) if common_currency else "ninguna")
         + ". Las diferencias entre fuentes solo son comparables dentro de la misma moneda; "
-        "tambien pueden reflejar composicion y seleccion distintas de anuncios."
+        "también pueden reflejar composición y selección distintas de anuncios."
+    )
+    eur = price_data[price_data["moneda_analisis"].eq("EUR")]
+    if not eur.empty:
+        lines.append(
+            f"Atención: EUR suma n={len(eur)} en toda la muestra (2 fichas de HogarEnCuba y 1 de "
+            "Cubisima). Se conserva por ser explícito en la descripción del vendedor, pero no se "
+            "interpreta ni se usa para comparar canales."
+        )
+    lines.append(
+        "La diferencia de medianas entre canales no controla por composición, zona, tamaño ni "
+        "moneda del anuncio: describe lo que se publica en cada canal, no el efecto causal del canal."
     )
     lines.append("")
 
@@ -296,6 +472,15 @@ def main():
         and conversion["dataset_maestro_origen"].nunique() == 1
         and conversion["dataset_maestro_origen"].iloc[0] == master_path.name
     )
+    nominal = None
+    nominal_matches_master = False
+    if nominal_path is not None:
+        nominal = pd.read_csv(nominal_path, dtype=str)
+        nominal_matches_master = (
+            "dataset_maestro_origen" in nominal
+            and nominal["dataset_maestro_origen"].nunique() == 1
+            and nominal["dataset_maestro_origen"].iloc[0] == master_path.name
+        )
     if conversion_matches_master:
         conv_stats = conversion.groupby(["fuente", "moneda_analisis"]).agg(
             anuncios=("precio_analisis", "count"),
@@ -307,13 +492,54 @@ def main():
         lines.append(conv_stats.to_markdown(index=False))
         lines.append(f"\nDataset maestro usado para conversion: `{master_path.name}`")
         lines.append(
-            "\nLa conversion CUC/USD nominal se identifica en `metodo_conversion_cuc` y no equivale a una tasa de mercado. "
-            "Los importes originales y las tasas registradas se conservan por separado."
+            f"Tasas registradas en `{conversion_path.name}`. USD y EUR se convierten con tasa informal "
+            "y formal; CUC no tiene tasa de mercado registrada y queda sin convertir en ese archivo."
+        )
+        if nominal is not None and nominal_matches_master:
+            nominal["precio_usd_informal"] = pd.to_numeric(nominal["precio_usd_informal"], errors="coerce")
+            cuc = nominal[
+                nominal["moneda_analisis"].eq("CUC")
+                & nominal["conversion_estado_informal"].eq("convertido_nominal_1_CUC_1_USD")
+            ]
+            metodo = (
+                str(cuc["metodo_conversion_cuc"].dropna().iloc[0])
+                if cuc["metodo_conversion_cuc"].notna().any()
+                else "paridad nominal 1 CUC = 1 USD"
+            )
+            mediana = cuc["precio_usd_informal"].median()
+            lines.append(
+                f"\nCUC: {len(cuc)} anuncios con precio de analisis se convierten a USD solo por "
+                f"paridad nominal 1 CUC = 1 USD (`{metodo}`); mediana equivalente "
+                f"{mediana:,.0f} USD. No es una tasa de mercado y no debe presentarse como "
+                "conversion verificada."
+            )
+            lines.append(f"Archivo nominal usado: `{nominal_path.name}`")
+        elif nominal_path is not None:
+            lines.append(
+                "\nLa conversion nominal de CUC no acredita el dataset maestro actual; no se cita."
+            )
+        else:
+            lines.append("\nNo hay archivo de conversion nominal de CUC.")
+        tasa_fecha = (
+            str(conversion["fecha_tasa"].dropna().iloc[0])
+            if "fecha_tasa" in conversion and conversion["fecha_tasa"].notna().any()
+            else "fecha no registrada"
+        )
+        tasa_fuente = (
+            str(conversion["fuente_tasa"].dropna().iloc[0])
+            if "fuente_tasa" in conversion and conversion["fuente_tasa"].notna().any()
+            else "fuente no registrada"
+        )
+        lines.append(
+            f"\nTasas registradas: {tasa_fecha} ({tasa_fuente}). ElToque estaba bloqueado; se usan "
+            "valores manuales auditables, no una tasa actualizada al corte. La conversion EUR de "
+            "HogarEnCuba se apoya en n=2 y la de Cubisima en n=1: son ilustrativas, no estimaciones "
+            "poblacionales."
         )
     else:
         lines.append(
             "Se omiten estas conversiones: el archivo no acredita que use el dataset maestro actual. "
-            "Vuelve a ejecutar convertir_precios_tasas.py después de reconstruir el maestro."
+            "Vuelve a ejecutar convertir_precios_tasas.py despues de reconstruir el maestro."
         )
     lines.append("")
 
@@ -322,21 +548,59 @@ def main():
     if cluster_files:
         latest_cluster = cluster_files[-1]
         clusters = pd.read_csv(latest_cluster)
-        grupos = clusters["cluster"].nunique()
         moneda_col = "moneda_analisis" if "moneda_analisis" in clusters else "moneda"
+        grupos = {
+            str(moneda): int(rows["cluster"].nunique())
+            for moneda, rows in clusters.groupby(moneda_col)
+        }
         detalle = "; ".join(
             f"{moneda}: {len(rows)} anuncios de {', '.join(sorted(rows['fuente'].unique()))}"
             for moneda, rows in clusters.groupby(moneda_col)
         )
+        completos = price_data.dropna(
+            subset=["precio_analisis", "habitaciones_analisis", "banos_analisis"]
+        )
+        conteo = completos.groupby("moneda_analisis").size()
+        incluidas = set(clusters[moneda_col].dropna().astype(str))
+        excluidas = {
+            str(moneda): int(cantidad)
+            for moneda, cantidad in conteo.items()
+            if str(moneda) not in incluidas and cantidad > 0
+        }
         lines.append(
             "El script `clustering_viviendas.py` aplica k-means (k=3) por separado a cada moneda "
-            "con al menos 30 observaciones, sobre el precio de analisis (que prefiere la reextraccion "
-            "manual y excluye precios sospechosos), habitaciones y banos (mejor dato disponible: "
-            "texto del anuncio, campo publicado o enlace). "
-            f"Resultado vigente: `{latest_cluster.name}` con {grupos} grupos por moneda ({detalle}). "
-            "Los centros estan en `centroides_clusters_*.csv`. "
-            "Solo entran las monedas con 30 o mas observaciones completas; el resto se excluye y se anota."
+            "con al menos 30 observaciones completas, sobre el precio de analisis (que prefiere la "
+            "reextraccion manual y excluye precios sospechosos), habitaciones y banos (mejor dato "
+            "disponible: texto del anuncio, campo publicado o enlace). "
+            f"Resultado vigente: `{latest_cluster.name}` con grupos por moneda {grupos} ({detalle}). "
+            "Los grupos se renumeran por mediana de precio (0=económico, 1=medio, 2=alto) para que "
+            "sean comparables entre monedas. Los centros estan en `centroides_clusters_*.csv`; "
+            "`precio_medio` es el centroide (media devuelta a escala original), no la mediana del grupo."
         )
+        centro_files = sorted((ROOT / "outputs" / "clustering").glob("centroides_clusters_*.csv"))
+        if centro_files:
+            centros = pd.read_csv(centro_files[-1])
+            columnas = [
+                columna
+                for columna in [
+                    "moneda",
+                    "cluster",
+                    "etiqueta",
+                    "precio_medio",
+                    "habitaciones_media",
+                    "banos_media",
+                ]
+                if columna in centros.columns
+            ]
+            lines.append("")
+            lines.append(f"Centroides vigentes (`{centro_files[-1].name}`):")
+            lines.append(centros[columnas].to_markdown(index=False))
+        if excluidas:
+            lines.append(
+                "\nMonedas con menos de 30 observaciones completas (no agrupadas): "
+                + "; ".join(f"{moneda}: {cantidad}" for moneda, cantidad in excluidas.items())
+                + "."
+            )
     else:
         lines.append(
             "El script `clustering_viviendas.py` aplica k-means por separado a cada moneda; "
@@ -387,6 +651,23 @@ def main():
                 "ventana. No se descartan: quedan marcados con su ventana y su justificacion."
             )
     lines.append(
+        "- Alcance: de las 1566 fichas iniciales se excluyeron 6 anuncios que no eran vivienda en "
+        "venta (productos, permuta o local) y 28 fuera de alcance (13 en otras provincias y 15 que no "
+        "son vivienda completa, incluidos cuartos sueltos). El maestro derivado queda en 1532. Las "
+        "listas auditables estan en `revision_manual/exclusiones_alcance.csv` y en los CSV fechados "
+        "`outputs/integracion/anuncios_no_residenciales_*.csv` y `anuncios_fuera_de_alcance_*.csv`."
+    )
+    lines.append(
+        "- Alcance dudoso: 14 anuncios de uso mixto o dudoso (fincas, hostales, casas con restaurante "
+        "o bar, almacenes y un local adaptado a vivienda) se conservan en el maestro porque la "
+        "decision de excluirlos corresponde al usuario; quedan listados en "
+        "`revision_manual/alcance_dudoso.csv` con motivo y evidencia."
+    )
+    lines.append(
+        "- Precios pendientes: los anuncios sin precio de analisis se listan con su motivo y la accion "
+        "sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`; ningun valor se imputa."
+    )
+    lines.append(
         "- m2 excluido del analisis: ninguna fuente lo publica de forma sistemática (Revolico y Cubisima "
         "0%, HogarEnCuba ~5%); la columna se conserva en el maestro solo como traza de origen y su "
         "cobertura se reporta como hallazgo comparativo, no como variable explicativa."
@@ -400,8 +681,10 @@ def main():
     lines.append(
         f"La base integrada reune {len(master)} anuncios de tres canales: "
         + "; ".join(f"{source}: {count}" for source, count in source_counts.items())
-        + ". La cobertura y la moneda difieren entre canales, por lo que el primer resultado defendible "
-        "es describir cada fuente por separado y comparar precios solo dentro de monedas compartidas."
+        + ", despues de excluir 6 fichas que no eran vivienda en venta y 28 fuera de alcance "
+        "(otras provincias o inmuebles no residenciales/cuartos). La cobertura y la moneda difieren "
+        "entre canales, por lo que el primer resultado defendible es describir cada fuente por "
+        "separado y comparar precios solo dentro de monedas compartidas."
     )
     lines.append(
         "La asociacion entre caracteristicas y precio puede explorarse en los subconjuntos con observaciones completas; "
