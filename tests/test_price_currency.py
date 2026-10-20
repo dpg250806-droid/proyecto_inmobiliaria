@@ -31,6 +31,7 @@ from revisar_precios_ausentes import (
     candidatos_de_url,
     resolver,
 )
+from procesar_entrevistas import QUESTIONS, build_coded, code_row, load_responses, prepare_frame
 from convertir_precios_tasas import convertir, latest_rate_file
 from extraer_metadatos_revolico import buscar_municipio_en_texto, parsear_pagina_anuncio
 from integrar_fuentes import hogarencuba_source_path
@@ -1020,6 +1021,66 @@ class PreciosAusentesTests(unittest.TestCase):
         self.assertEqual(
             aplicar_politica_consulta("ambiguo", "x", True, "http_403", False)[0], "ambiguo"
         )
+
+
+class ProcesarEntrevistasTests(unittest.TestCase):
+    """Anonimizacion, privacidad y codificacion de entrevistas."""
+
+    @staticmethod
+    def raw_frame():
+        # La ultima pregunta del export real trae un espacio final que rompia el rename.
+        canales = next(k for k, v in QUESTIONS.items() if v == "canales") + " "
+        return pd.DataFrame([{
+            "Marca temporal": "2026-10-15 21:32:57.907000",
+            "Dirección de correo electrónico": "persona@example.com",
+            "Cuál es su relación con la vivienda?": "Propietario",
+            canales: "Grupos de Telegram y WhatsApp en Playa",
+        }])
+
+    def test_prepare_frame_anonima_y_renombra(self):
+        frame = prepare_frame(self.raw_frame())
+        self.assertEqual(frame.loc[0, "entrevista_id"], "E01")
+        self.assertIn("canales", frame.columns)         # rename con espacio final
+        self.assertNotIn("fecha_respuesta_mal", frame.columns)
+        self.assertEqual(frame.loc[0, "fecha_respuesta"], "2026-10-15 21:32:57")
+        # Privacidad: ninguna columna de metadatos personales sobrevive.
+        self.assertFalse(any("correo" in c.casefold() for c in frame.columns))
+        self.assertFalse(any("persona@example.com" in str(v) for v in frame.values.ravel()))
+
+    def test_build_coded_secuencia_e(self):
+        raw = pd.concat([self.raw_frame(), self.raw_frame()], ignore_index=True)
+        coded = build_coded(prepare_frame(raw))
+        self.assertEqual(list(coded["entrevista_id"]), ["E01", "E02"])
+        for code in ("C1_necesidad_economica", "C2_migracion", "C3_moneda_tasa",
+                     "C4_canal_venta", "C5_precio_alto", "C6_caracteristicas",
+                     "C7_municipio", "A1_cita"):
+            self.assertIn(code, coded.columns)
+        # La respuesta de canales menciona Telegram/WhatsApp/Playa.
+        self.assertEqual(int(coded.loc[0, "C4_canal_venta"]), 1)
+        self.assertEqual(int(coded.loc[0, "C7_municipio"]), 1)
+
+    def test_code_row_acento_insensible(self):
+        row = pd.Series({
+            "evolucion_precios": "La travesía por Nicaragua y la emigración",
+            "factores_precio": "los banos y la piscina",
+            "municipio": "Diez de Octubre",
+        })
+        codes = code_row(row)
+        self.assertEqual(codes["C2_migracion"], 1)   # "travesía" acentuada
+        self.assertEqual(codes["C6_caracteristicas"], 1)  # "banos" sin tilde
+        self.assertEqual(codes["C7_municipio"], 1)   # municipio fuera de la lista vieja
+
+    def test_load_responses_formatos(self):
+        with self.assertRaises(FileNotFoundError):
+            load_responses(Path("no_existe_export.xlsx"))
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
+            handle.write(b"x")
+            ruta = Path(handle.name)
+        try:
+            with self.assertRaises(ValueError):
+                load_responses(ruta)
+        finally:
+            os.unlink(ruta)
 
 
 if __name__ == "__main__":

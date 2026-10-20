@@ -7,11 +7,13 @@ from datetime import datetime
 import pandas as pd
 
 from precio_moneda import detalle_analisis, precios_analisis
+from procesar_entrevistas import plain_text
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
 CONV_DIR = ROOT / "outputs" / "conversiones"
 OUT = ROOT / "outputs" / "preguntas"
+ENTREVISTAS_DIR = ROOT / "outputs" / "entrevistas"
 
 
 def latest(directory: Path, pattern: str) -> Path:
@@ -61,6 +63,68 @@ def rank_associations(frame: pd.DataFrame) -> pd.DataFrame:
                 "spearman_rho": round(float(coefficient), 3),
             })
     return pd.DataFrame(rows)
+
+
+def seccion_entrevistas() -> list[str]:
+    """Bloque de evidencia cualitativa a partir de las entrevistas ya procesadas.
+
+    Lee el CSV codificado mas reciente de `outputs/entrevistas/` y reporta solo
+    frecuencias de palabras clave y conteos verificables; la lectura interpretativa
+    se hace a mano en el informe, con las respuestas literales auditables en
+    `resumen_entrevistas_*.md`. No atribuye causalidad.
+    """
+    try:
+        coded_path = latest(ENTREVISTAS_DIR, "entrevistas_codificadas_*.csv")
+    except FileNotFoundError:
+        return [
+            "No hay entrevistas procesadas en `outputs/entrevistas/`; para incorporarlas ejecute "
+            "`procesar_entrevistas.py --csv <export>`.",
+        ]
+    coded = pd.read_csv(coded_path, dtype=str).fillna("")
+    n = len(coded)
+    lines = [
+        f"Entrevistas procesadas: {n} (`{coded_path.name}`), anonimas y codificadas como "
+        f"E01..E{n:02d} por `procesar_entrevistas.py`."
+    ]
+    fechas = pd.to_datetime(coded.get("fecha_respuesta", pd.Series(dtype=str)), errors="coerce")
+    if fechas.notna().any():
+        lines.append(f"- Fechas de respuesta: del {fechas.min().date()} al {fechas.max().date()}.")
+    code_cols = [c for c in coded.columns if c.startswith("C") and c[1].isdigit()]
+    if code_cols:
+        frec = [(c, int(pd.to_numeric(coded[c], errors="coerce").fillna(0).sum())) for c in code_cols]
+        lines.append(
+            "- Presencia de temas en el texto de las respuestas (heuristica de palabras clave, "
+            "acento-insensible; ver `data_dictionary.md`): "
+            + "; ".join(f"{c} = {v}/{n}" for c, v in frec)
+            + "."
+        )
+    if "factor_dominante" in coded.columns:
+        textos = [plain_text(t) for t in coded["factor_dominante"]]
+        menciones = [
+            ("migracion", sum("migra" in t for t in textos)),
+            ("crisis economica", sum("crisis" in t for t in textos)),
+            ("tasas o divisas", sum(("tasa" in t) or ("divisa" in t) for t in textos)),
+        ]
+        lines.append(
+            "- En la pregunta del factor dominante (varias respuestas nombran mas de un factor): "
+            + "; ".join(f"{k} {v}/{n}" for k, v in menciones)
+            + ". Las respuestas literales estan en `outputs/entrevistas/resumen_entrevistas_*.md`."
+        )
+    if "municipio" in coded.columns:
+        mun = coded["municipio"].replace({"": pd.NA}).dropna().value_counts()
+        if len(mun):
+            lines.append(
+                "- Municipios de las viviendas de mayor conocimiento: "
+                + "; ".join(f"{k} ({v})" for k, v in mun.items())
+                + "."
+            )
+    lines.append(
+        "- Cruce con los datos de anuncios (asociacion, no causalidad): las percepciones sobre la "
+        "evolucion de precios desde 2020 no son verificables ni refutables con una muestra "
+        "transversal de anuncios publicados sobre todo en 2026; se presentan como evidencia "
+        "cualitativa y se contrastan con medianas y agrupamientos, sin estimar efectos."
+    )
+    return lines
 
 
 def main():
@@ -282,8 +346,10 @@ def main():
 
     lines.append("## 8. Migracion y mercado (tratamiento recomendado)")
     lines.append("Los anuncios transversales no permiten atribuir cambios de precio a la migracion ni estimar su efecto porcentual. "
-                 "Este eje requiere triangular entrevistas anonimas con fuentes historicas/contextuales y presentar percepciones "
+                 "Este eje se triangula con entrevistas anonimas y fuentes historicas/contextuales, presentando las percepciones "
                  "como evidencia cualitativa, no como causalidad.")
+    lines.append("")
+    lines.extend(seccion_entrevistas())
     lines.append("")
 
     lines.append("## 9. Limites del proyecto")
@@ -343,8 +409,9 @@ def main():
         "de superficie utilizable."
     )
     lines.append(
-        "La interpretacion de la presion migratoria, motivos de venta y negociacion queda deliberadamente abierta "
-        "hasta incorporar las entrevistas pendientes. Este texto organiza resultados preliminares y no reemplaza el informe final."
+        "La presion migratoria, los motivos de venta y la negociacion se abordan con las entrevistas anonimas "
+        "disponibles como evidencia cualitativa (percepciones, no causalidad), contrastada con las medianas y "
+        "agrupamientos anteriores. Este texto organiza resultados preliminares y no reemplaza el informe final."
     )
     lines.append("")
 

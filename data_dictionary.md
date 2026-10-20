@@ -135,6 +135,22 @@ Lo que no se pudo resolver queda en `outputs/validacion/precios_pendientes_<fech
 
 El campo `tipo_vivienda` de Revolico se clasifica con palabras clave sobre el título completo (`clasificar_tipo_vivienda()`, misma precedencia que `limpiar_revolico.py`: penthouse > casa > apartamento/apto) porque el CSV de origen no trae ese campo: antes se usaba la primera palabra del título, lo que metía precios y teléfonos como tipos (734 filas). Lo no reconocido queda `no_clasificado` (138 filas) y, si no hay título, no se inventa ningún tipo.
 
+### Entrevistas anónimas (`procesar_entrevistas.py`)
+
+El export anónimo del formulario (CSV o XLSX) se procesa sin persistir jamás metadatos personales: cualquier columna de correo, nombre o teléfono se descarta antes de escribir. Las respuestas se anonimizan como `entrevista_id` E01..E0N y cada fila conserva `fecha_respuesta` (ISO cuando se puede parsear) más una columna por pregunta (`relacion`, `municipio`, `evolucion_precios`, `factores_precio`, `influencia_tasas`, `refleja_precio`, `influencia_migracion`, `factor_dominante`, `reduccion_precio`, `canales`). La salida queda en `outputs/entrevistas/entrevistas_codificadas_<fecha>.csv` con códigos calculados sobre el texto completo de cada respuesta (minúsculas sin tildes, búsqueda por subcadena):
+
+| Código | Criterio |
+|---|---|
+| `C1_necesidad_economica` | dinero, necesidad, urgencia o miseria |
+| `C2_migracion` | migra*, travesía, Nicaragua |
+| `C3_moneda_tasa` | USD, CUP, tasas o moneda |
+| `C4_canal_venta` | Telegram, WhatsApp, Facebook o grupo |
+| `C5_precio_alto` | caro, carísimo, regalo o valor |
+| `C6_caracteristicas` | m2, metro, baño(s) o piscina |
+| `C7_municipio` | cualquier municipio de La Habana en el texto |
+
+`A1_cita` guarda los primeros 220 caracteres como cita ilustrativa y el `resumen_entrevistas_<fecha>.md` reproduce frecuencias, relación/municipio y las respuestas literales del factor dominante y de la migración. Los códigos son heurísticas de frecuencia para organizar el discurso (p. ej. «valor» aparece también al hablar del valor real): no sustituyen la lectura manual ni prueban causalidad.
+
 ### Metadatos de la página del anuncio de Revolico
 
 La tarjeta del listado guardado (`paginas_revolico/`) solo contiene imagen, precio, título y enlace: **el municipio y la fecha no están en el HTML de listado**. Cuando existen, viven en la página individual del anuncio, dentro de `__NEXT_DATA__` → `props.pageProps.__APOLLO_STATE__`. `extraer_metadatos_revolico.py` consulta cada URL del maestro (con reintentos y espera) y guarda la evidencia en `outputs/metadatos_revolico/metadatos_revolico_<marca>.csv`; la extracción es reanudable con `--reanudar` y registra el estado de cada anuncio, incluidos los despublicados o borrados.
