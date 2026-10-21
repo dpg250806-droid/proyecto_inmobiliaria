@@ -229,8 +229,9 @@ def main():
     lines.append(stats.to_markdown(index=False))
     lines.append(
         "\nLa mediana es el centro robusto de cada grupo; la media se desplaza por valores extremos "
-        "(por ejemplo, HogarEnCuba USD). No se comparan importes entre monedas. Las filas con n<10 "
-        "(Cubisima USD n=8; EUR n=1 por fuente) se muestran para trazabilidad y no se interpretan."
+        "(por ejemplo, HogarEnCuba USD). No se comparan importes entre monedas. Las filas con menos "
+        "de 30 observaciones (EUR: n=1 por fuente; Cubisima USD: n=14) se muestran para trazabilidad "
+        "y no se interpretan."
     )
     lines.append("")
 
@@ -384,8 +385,12 @@ def main():
             )
 
         for currency, currency_rows in cub.groupby("moneda_analisis"):
-            if len(currency_rows) < 10:
-                lines.append(f"Moneda **{currency}**: n={len(currency_rows)}; no se calcula el tercio superior.")
+            if len(currency_rows) < 30:
+                lines.append(
+                    f"Moneda **{currency}**: n={len(currency_rows)}; no se calcula el tercio superior "
+                    "(se necesitan al menos 30 observaciones para que los dos grupos sean "
+                    "interpretables)."
+                )
                 continue
             corte = currency_rows["precio_analisis"].quantile(0.66)
             alto = currency_rows[currency_rows["precio_analisis"] >= corte]

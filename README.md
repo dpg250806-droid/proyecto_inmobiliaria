@@ -4,7 +4,7 @@ Proyecto académico que analiza el mercado inmobiliario de La Habana a partir de
 
 - **Tema:** precio de la vivienda y sus determinantes observables (tamaño, zona, canal, moneda), en el contexto de la crisis económica, la desmonetización del CUC y la migración.
 - **Corte de datos:** 19/10/2026 · **Tasas de cambio:** 20/10/2026 · **Revisión del estado:** 20/10/2026
-- **Base de análisis:** 1.523 anuncios (Revolico 754, Cubisima 586, HogarEnCuba 183) con 1.389 precios utilizables (91,2 %).
+- **Base de análisis:** 1.516 anuncios (Revolico 748, Cubisima 585, HogarEnCuba 183) con 1.404 precios utilizables (92,6 %).
 - **Naturaleza:** asociación descriptiva y reproducible. No se afirma causalidad y no se imputan valores ausentes.
 
 > El documento de resultados vigente es [`informe_preliminar.md`](informe_preliminar.md). El informe final académico queda pendiente de autorización expresa.
@@ -33,15 +33,16 @@ El detalle de la formulación está en [`preguntas_investigacion.md`](preguntas_
 
 | Indicador | Valor |
 |---|---|
-| Anuncios en el maestro | 1.523 (0 IDs y 0 URLs duplicados) |
-| Precios utilizables | 1.389 (91,2 %) |
-| Sin precio verificable | 134 (con motivo registrado) |
-| Moneda de análisis | USD 871 · CUC 515 · EUR 3 · sin moneda 134 |
-| Municipios homologados | 938 (solo los 15 de La Habana) |
+| Anuncios en el maestro | 1.516 (0 IDs y 0 URLs duplicados) |
+| Precios utilizables | 1.404 (92,6 %) |
+| Sin precio verificable | 112 (con motivo registrado) |
+| Moneda de análisis | USD 885 · CUC 515 · EUR 4 · sin moneda 112 |
+| Municipios homologados | 931 (solo los 15 de La Habana) |
 | Anuncios de Revolico inaccesibles | 153 (80 despublicados, 73 eliminados) |
-| Fichas excluidas del alcance | 43 (6 no residenciales, 13 fuera de La Habana, 15 no vivienda, 9 alquileres) |
+| Fichas excluidas del alcance | 50 (15 no residenciales y 1 permuta de la pasada previa, 13 fuera de La Habana, 15 no vivienda, 9 alquileres, 7 de objeto o servicio no residencial) |
 | Fichas de alcance dudoso | 14, **incluidas** por decisión de la investigadora (venta de inmueble) y marcadas en `alcance_dudoso`; sensibilidad de las medianas: 0,00 % |
 | Revisión de precios < 1.000 | 23 anuncios revisados uno a uno: 9 alquileres retirados, 9 sin precio verificable, 4 despublicados, 1 reextraído (12.500 USD) |
+| Segunda pasada sobre los 134 sin precio | 15 precios recuperados del texto (12 USD, 4.500-600.000 USD, 125.000 EUR, 7.500 USD por convención de millares) y 7 anuncios retirados por no ser oferta de venta de vivienda |
 | Tasas registradas | 20/10/2026 (USD 815 informal / 710,50 formal; EUR 910 / 796,26) |
 | Entrevistas codificadas | 10 (E01–E10, 15–19/10/2026) |
 | Pruebas automáticas | 70 en verde (`python -m unittest discover -s tests -t .`) |
@@ -164,6 +165,8 @@ python -m unittest discover -s tests -t .
 | `generar_alcance_dudoso.py` | Regenera `revision_manual/alcance_dudoso.csv` desde el maestro |
 | `generar_precios_pendientes.py` | Regenera la lista de precios pendientes con motivo y acción sugerida |
 | `generar_precios_bajos_1000.py` | Regenera `revision_manual/precios_bajos_1000.csv` (veredictos manuales de la revisión de precios < 1.000) |
+| `generar_precios_pendientes_recuperados.py` | Regenera `revision_manual/precios_pendientes_recuperados.csv` (15 precios recuperados y 7 anuncios de objeto no residencial) |
+| `revisar_precios_pendientes_texto.py` | Rastrea en el texto ya descargado los montos declarados en los anuncios sin precio |
 | `revisar_precios_bajos_1000.py` | Consulta la ficha individual de los anuncios con precio < 1.000 y extrae los montos del texto |
 | `auditar_alquileres.py` | Detecta alquileres y permutas publicados en los catálogos de venta |
 | `tests/` | Pruebas de precio/moneda, exclusiones de alcance y homologación de municipios |
@@ -187,6 +190,7 @@ python -m unittest discover -s tests -t .
 | `precios_bajos.csv` | 37 precios revisados uno a uno contra la descripción |
 | `precios_ausentes.csv` | 142 veredictos de la búsqueda de precios ausentes |
 | `precios_bajos_1000.csv` | 23 anuncios con precio < 1.000 o alquileres, revisados contra la ficha individual (9 alquileres, 9 sin precio verificable, 4 despublicados, 1 reextraído) |
+| `precios_pendientes_recuperados.csv` | Segunda pasada sobre los 134 anuncios sin precio: 15 precios recuperados con su cita literal y 7 anuncios que no son oferta de venta de vivienda |
 | `exclusiones_alcance.csv` | 28 exclusiones de alcance con URL, motivo y evidencia |
 | `alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión (20/10/2026), con motivo, evidencia, decisión y advertencia de interpretación |
 
@@ -233,16 +237,16 @@ Se versionan código, documentación, pruebas y las decisiones manuales auditada
 1. Sin serie temporal de precios: 601 de 602 fechas útiles de Revolico son de agosto a octubre de 2026. No hay panel 2020-2026.
 2. Sesgo de disponibilidad: 153 de 755 anuncios de Revolico ya no son accesibles; se marcan con su ventana de despublicación.
 3. Cobertura parcial de habitaciones (69,9 %) y banos (37,7 %) en Revolico; 72 anuncios con cantidades discrepantes quedan sin resolver.
-4. 134 anuncios sin precio verificable: es el faltante principal y no se resuelve por imputación (quedan listados con motivo y acción sugerida en `outputs/validacion/`).
+4. 112 anuncios sin precio verificable: es el faltante principal y no se resuelve por imputación (quedan listados con motivo y acción sugerida en `outputs/validacion/`).
 5. Tasas de referencia, no operadas: el registro es del 20/10/2026 y se leyó de ElToque por transcripción manual (el acceso automático devuelve HTTP 403); el euro varió durante el día y se toma la cifra de las 17:00.
 6. Precios en CUP (5) y EUR (3) no interpretables por volumen o por conflicto de fuente.
 7. Muestra de entrevistas pequeña, no probabilística y autoseleccionada: describe mecanismos, no prevalencias.
 8. Las 14 fichas de alcance dudoso pueden tener un precio que incluye tierra, licencia o equipamiento de negocio: se mantienen, se marcan y se prueban.
-9. El catálogo de venta está contaminado: nueve anuncios eran alquileres (con el precio de la renta mensual) y se retiraron; no se puede descartar que queden casos similares por encima de 1.000.
+9. El catálogo de venta está contaminado: nueve anuncios eran alquileres (con el precio de la renta mensual), siete no eran oferta de venta de vivienda (productos, anuncios de agencia, una demanda de compra, un restaurante) y se retiraron; no se puede descartar que queden casos similares por encima de 1.000.
 10. Cuatro de las siete fuentes externas contrastadas tienen interés comercial: se citan como comentario de mercado, no como medición (`fuentes_externas.md`).
 
 ## 11. Pendientes
 
 1. ~~Tasas verificadas~~ — resuelto el 20/10/2026 (registro actualizado, conversiones y gráficos regenerados).
-2. **Revisión de los 134 precios pendientes**, sin imputar: la lista con motivo y acción sugerida está en `outputs/validacion/precios_pendientes_actualizado_*.csv`.
+2. **Revisión de los 112 precios pendientes**, sin imputar: la lista con motivo y acción sugerida está en `outputs/validacion/precios_pendientes_actualizado_*.csv`. En su mayoría el vendedor nunca publicó un precio.
 3. **Informe final**: redacción académica con discusión, limitaciones y referencias, pendiente de autorización expresa.
