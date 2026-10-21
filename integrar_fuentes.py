@@ -349,6 +349,40 @@ def excluir_fuera_de_alcance(
     return frame.loc[~mascara].copy(), excluidos
 
 
+RUTA_ALCANCE_DUDOSO_POR_DEFECTO = REPO_ROOT / "revision_manual" / "alcance_dudoso.csv"
+
+
+def aplicar_alcance_dudoso(
+    frame: pd.DataFrame, ruta: Path | None = RUTA_ALCANCE_DUDOSO_POR_DEFECTO
+) -> pd.DataFrame:
+    """Marca los anuncios de alcance dudoso que se conservan en el analisis.
+
+    Decision de la investigadora (20/10/2026): todo lo que sea venta de inmueble
+    es valido, por lo que estas fichas (fincas, hostales, casas con bar o
+    restaurante, almacenes, local adaptado) se mantienen en el maestro. La marca
+    `alcance_dudoso` permite medir la sensibilidad de los resultados sin volver
+    a integrar el maestro.
+    """
+    frame = frame.copy()
+    frame["alcance_dudoso"] = False
+    frame["motivo_alcance_dudoso"] = ""
+    if ruta is None or not Path(ruta).exists() or frame.empty:
+        return frame
+    lista = pd.read_csv(ruta, dtype=str).fillna("")
+    if "url" not in lista.columns:
+        raise ValueError(f"{ruta} no tiene la columna 'url'")
+    motivos = (
+        lista.drop_duplicates("url").set_index("url")["motivo"].str.strip().to_dict()
+        if "motivo" in lista.columns
+        else {}
+    )
+    urls = frame["url"].fillna("").astype(str).str.strip()
+    mascara = urls.isin(set(motivos))
+    frame.loc[mascara, "alcance_dudoso"] = True
+    frame.loc[mascara, "motivo_alcance_dudoso"] = urls[mascara].map(motivos)
+    return frame
+
+
 RUTAS_REVISION_POR_DEFECTO = (
     REPO_ROOT / "revision_manual" / "precios_bajos.csv",
     REPO_ROOT / "revision_manual" / "precios_ausentes.csv",
@@ -706,6 +740,7 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         )
 
     merged = aplicar_metadatos_revolico(merged)
+    merged = aplicar_alcance_dudoso(merged)
     merged = aplicar_detalle_anuncios(merged)
     merged["precio_analisis"], merged["moneda_analisis"] = precios_analisis(merged)
     merged["origen_precio"] = "excluido"
@@ -762,6 +797,8 @@ def integrar(dedup_by_url: bool = True) -> pd.DataFrame:
         "fecha_ultima_disponibilidad",
         "ventana_despublicacion",
         "justificacion_disponibilidad",
+        "alcance_dudoso",
+        "motivo_alcance_dudoso",
     ]
     return merged[columns]
 

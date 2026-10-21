@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from integrar_fuentes import excluir_fuera_de_alcance
+from integrar_fuentes import aplicar_alcance_dudoso, excluir_fuera_de_alcance
 from ubicaciones import homologar_municipio
 
 
@@ -63,6 +63,32 @@ class AlcanceTests(unittest.TestCase):
             pd.DataFrame([{"id_local": "x"}]).to_csv(ruta, index=False)
             with self.assertRaises(ValueError):
                 excluir_fuera_de_alcance(frame, ruta)
+
+
+class AlcanceDudosoTests(unittest.TestCase):
+    """Las 14 fichas dudosas se conservan en el analisis, pero quedan marcadas."""
+
+    def test_marca_por_url_y_conserva_el_motivo(self):
+        frame = pd.DataFrame([
+            {"url": "https://ejemplo.test/1", "titulo": "Finca en venta"},
+            {"url": "https://ejemplo.test/2", "titulo": "Casa en Playa"},
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "alcance_dudoso.csv"
+            pd.DataFrame([
+                {"url": "https://ejemplo.test/1", "motivo": "finca", "estado": "incluido_en_analisis"}
+            ]).to_csv(ruta, index=False)
+            resultado = aplicar_alcance_dudoso(frame, ruta)
+        self.assertEqual(len(resultado), 2)
+        self.assertTrue(bool(resultado.iloc[0]["alcance_dudoso"]))
+        self.assertEqual(resultado.iloc[0]["motivo_alcance_dudoso"], "finca")
+        self.assertFalse(bool(resultado.iloc[1]["alcance_dudoso"]))
+        self.assertEqual(resultado.iloc[1]["motivo_alcance_dudoso"], "")
+
+    def test_sin_lista_no_marca_nada(self):
+        frame = pd.DataFrame([{"url": "https://ejemplo.test/1"}])
+        resultado = aplicar_alcance_dudoso(frame, None)
+        self.assertFalse(bool(resultado.iloc[0]["alcance_dudoso"]))
 
 
 if __name__ == "__main__":

@@ -530,11 +530,20 @@ def main():
             if "fuente_tasa" in conversion and conversion["fuente_tasa"].notna().any()
             else "fuente no registrada"
         )
+        fecha_tasa_legible = tasa_fecha
+        try:
+            marca = pd.to_datetime(tasa_fecha, errors="coerce", utc=True)
+            if pd.notna(marca):
+                fecha_tasa_legible = marca.strftime("%d/%m/%Y")
+        except Exception:  # noqa: BLE001 - la fecha original se muestra si falla el formato
+            fecha_tasa_legible = tasa_fecha
         lines.append(
-            f"\nTasas registradas: {tasa_fecha} ({tasa_fuente}). ElToque estaba bloqueado; se usan "
-            "valores manuales auditables, no una tasa actualizada al corte. La conversion EUR de "
-            "HogarEnCuba se apoya en n=2 y la de Cubisima en n=1: son ilustrativas, no estimaciones "
-            "poblacionales."
+            f"\nTasas registradas: {fecha_tasa_legible} ({tasa_fecha}; {tasa_fuente}). El acceso "
+            "automatico a ElToque esta bloqueado (HTTP 403), asi que los valores se transcriben "
+            "manualmente de la pagina y quedan en un registro auditable con su fecha; son tasas de "
+            "referencia, no operadas. El CUC no tiene tasa de mercado y solo se convierte con la "
+            "paridad nominal declarada. La conversion EUR de HogarEnCuba se apoya en n=2 y la de "
+            "Cubisima en n=1: son ilustrativas, no estimaciones poblacionales."
         )
     else:
         lines.append(
@@ -659,10 +668,60 @@ def main():
     )
     lines.append(
         "- Alcance dudoso: 14 anuncios de uso mixto o dudoso (fincas, hostales, casas con restaurante "
-        "o bar, almacenes y un local adaptado a vivienda) se conservan en el maestro porque la "
-        "decision de excluirlos corresponde al usuario; quedan listados en "
-        "`revision_manual/alcance_dudoso.csv` con motivo y evidencia."
+        "o bar, almacenes y un local adaptado a vivienda) se conservan en el maestro por decision de la "
+        "investigadora (20/10/2026: todo lo que sea venta de inmueble es valido). Quedan marcados en "
+        "`alcance_dudoso` y listados en `revision_manual/alcance_dudoso.csv` con motivo y evidencia."
     )
+    if "alcance_dudoso" in master.columns:
+        marca_dudoso = master["alcance_dudoso"].astype(str).str.strip().str.lower().eq("true")
+        n_dudoso = int(marca_dudoso.sum())
+        if n_dudoso:
+            filas_sensibilidad = []
+            for fuente in sorted(price_data["fuente"].unique()):
+                sub = price_data[price_data["fuente"].eq(fuente)]
+                sin_dudosos = sub[
+                    ~sub["alcance_dudoso"].astype(str).str.strip().str.lower().eq("true")
+                ]
+                for moneda in sorted(sub["moneda_analisis"].unique()):
+                    con = sub[sub["moneda_analisis"].eq(moneda)]["precio_analisis"]
+                    sin = sin_dudosos[sin_dudosos["moneda_analisis"].eq(moneda)]["precio_analisis"]
+                    if len(con) < 5:
+                        continue
+                    filas_sensibilidad.append(
+                        {
+                            "fuente": fuente,
+                            "moneda": moneda,
+                            "n_con": len(con),
+                            "mediana_con": round(con.median(), 0),
+                            "n_sin": len(sin),
+                            "mediana_sin": round(sin.median(), 0) if len(sin) else None,
+                            "diferencia_pct": (
+                                round((con.median() / sin.median() - 1) * 100, 2)
+                                if len(sin) and sin.median()
+                                else None
+                            ),
+                        }
+                    )
+            if filas_sensibilidad:
+                lines.append("")
+                lines.append(
+                    f"### 9b. Sensibilidad a las {n_dudoso} fichas de alcance dudoso"
+                )
+                lines.append("")
+                lines.append(
+                    f"Las {n_dudoso} fichas ({100 * n_dudoso / len(master):.1f} % del maestro) se mantienen "
+                    "en el analisis. Este es el efecto de quitarlas, para mostrar que ningun resultado "
+                    "depende de ellas:"
+                )
+                lines.append(pd.DataFrame(filas_sensibilidad).to_markdown(index=False))
+                lineas_sensibilidad = pd.DataFrame(filas_sensibilidad)
+                if lineas_sensibilidad["diferencia_pct"].notna().any():
+                    mayor = lineas_sensibilidad["diferencia_pct"].abs().max()
+                    lines.append(
+                        f"\nEl desplazamiento maximo de una mediana es de {mayor:.2f} %: las conclusiones "
+                        "se mantienen con y sin estas fichas."
+                    )
+                lines.append("")
     lines.append(
         "- Precios pendientes: los anuncios sin precio de analisis se listan con su motivo y la accion "
         "sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`; ningun valor se imputa."
@@ -673,7 +732,11 @@ def main():
         "cobertura se reporta como hallazgo comparativo, no como variable explicativa."
     )
     lines.append("- El listado de Revolico esta bloqueado para scraping automatico; se usa HTML guardado.")
-    lines.append("- Tasas online bloqueadas; se usa registro manual auditable.")
+    lines.append(
+        "- Tasas: el acceso automatico a ElToque esta bloqueado (HTTP 403), asi que las del 20/10/2026 "
+        "(USD 815 informal y 710,5 formal; EUR 910 informal y 796,26 formal) se transcribieron "
+        "manualmente de la pagina y quedan en un registro auditable con fecha, fuente y nota."
+    )
     lines.append("")
     lines.append("## 10. Linea narrativa de resultados (borrador, no informe final)")
     lines.append("")

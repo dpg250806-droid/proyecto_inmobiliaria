@@ -2,8 +2,10 @@
 """Genera `revision_manual/alcance_dudoso.csv`.
 
 Lista los anuncios que se conservan en el maestro pese a tener un alcance dudoso
-(uso mixto vivienda-negocio, fincas, almacenes, hostales): no son-clearmente
-viviendas principales, pero la decision de excluirlos corresponde al usuario.
+(uso mixto vivienda-negocio, fincas, almacenes, hostales). Decision de la
+investigadora (20/10/2026): todo lo que sea venta de inmueble es valido, asi
+que las 14 fichas se **mantienen en el analisis** y quedan marcadas para poder
+medir su sensibilidad.
 
 El emparejamiento se hace por el prefijo del identificador local de Revolico
 y se verifica contra la URL exacta del maestro. No modifica el maestro.
@@ -78,6 +80,23 @@ CASOS = {
 }
 
 FECHA_REVISION = "2026-10-19"
+FECHA_DECISION = "2026-10-20"
+DECISION = "incluido_en_analisis"
+NOTA_DECISION = (
+    "Decision de la investigadora (20/10/2026): todo lo que sea venta de inmueble es valido, "
+    "por lo que el anuncio se mantiene en el analisis. La marca solo permite medir la "
+    "sensibilidad de los resultados a estas 14 fichas."
+)
+CAVEAT = {
+    "finca": "El precio puede incluir tierra y otros activos, no solo vivienda.",
+    "casa_con_finca": "El precio puede incluir la finca, no solo la vivienda.",
+    "uso_mixto": "El precio puede incluir el negocio en funcionamiento.",
+    "hostal": "El precio puede incluir la licencia y el equipamiento del negocio.",
+    "casa_restaurante": "El precio puede incluir el equipamiento del restaurante.",
+    "casa_con_bar": "El precio puede incluir la licencia del bar.",
+    "almacen": "El uso declarado no es vivienda principal.",
+    "local_adaptado": "El uso y la situacion legal no son verificables.",
+}
 
 
 def main() -> None:
@@ -101,8 +120,11 @@ def main() -> None:
                 "evidencia": evidencia,
                 "titulo": fila["titulo"],
                 "fecha_revision": FECHA_REVISION,
-                "estado": "pendiente_revision",
-                "nota": "Se conserva en el maestro; no se excluye sin decision del usuario.",
+                "estado": DECISION,
+                "fecha_decision": FECHA_DECISION,
+                "decisor": "investigadora",
+                "nota": NOTA_DECISION,
+                "caveat_analisis": CAVEAT.get(motivo, ""),
             }
         )
 
@@ -110,7 +132,7 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     salida.to_csv(OUT, index=False, encoding="utf-8")
     print(f"Escrito {OUT} con {len(salida)} filas")
-    print(salida[["id_local", "motivo", "titulo"]].to_string(index=False))
+    print(salida[["id_local", "motivo", "estado", "titulo"]].to_string(index=False))
 
 
 if __name__ == "__main__":
