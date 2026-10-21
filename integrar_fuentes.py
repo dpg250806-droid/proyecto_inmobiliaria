@@ -384,6 +384,10 @@ def aplicar_alcance_dudoso(
 
 
 RUTAS_REVISION_POR_DEFECTO = (
+    # Revision de precios raros (<1.000) y de alquileres publicados en el
+    # catalogo de venta: se resolvio con la ficha individual de cada anuncio
+    # (20/10/2026) y va primero porque es posterior y mas especifica.
+    REPO_ROOT / "revision_manual" / "precios_bajos_1000.csv",
     REPO_ROOT / "revision_manual" / "precios_bajos.csv",
     REPO_ROOT / "revision_manual" / "precios_ausentes.csv",
 )
