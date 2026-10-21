@@ -100,7 +100,7 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 
 ## 9. Maestro integrado
 
-**Archivo vigente:** `outputs/integracion/dataset_maestro_20261020_193305.csv` — 1.532 filas × 59 columnas (Revolico 755, Cubisima 594, HogarEnCuba 183), 0 `id_maestro` duplicados y 0 URLs repetidas. Copia depurada: `outputs/limpieza_integrada/dataset_maestro_depurado_*.csv`.
+**Archivo vigente:** `outputs/integracion/dataset_maestro_20261020_214356.csv` — 1.523 filas × 59 columnas (Revolico 754, Cubisima 586, HogarEnCuba 183), 0 `id_maestro` duplicados y 0 URLs repetidas. Copia depurada: `outputs/limpieza_integrada/dataset_maestro_depurado_*.csv`.
 
 ### 9.1 Identificación y procedencia
 
@@ -132,13 +132,13 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 
 | Columna | Tipo | Contenido y uso |
 |---|---|---|
-| `veredicto_revision` | categórica | Veredicto de la revisión de precios (`revision_manual/precios_bajos.csv` y `revision_manual/precios_ausentes.csv`). Valores vigentes: `sin_precio_en_texto` (69), `solo_coincide_con_publicado` (16), `no_verificable` (14), `precio_recuperado` (13), `error` (13), `anuncio_no_disponible` (8), `cup_requiere_validacion` (5), `despublicado` (4), `ambiguo` (3), `moneda_ambigua` (1), `valor_improbable` (1); vacío en los 1.385 anuncios no revisados. |
-| `precio_reextraido`, `moneda_reextraida` | numérico / categórica | Importe y moneda verificados en la descripción o el título (25 anuncios: 12 de la revisión de precios bajos y 13 de la búsqueda de precios ausentes). |
+| `veredicto_revision` | categórica | Veredicto de la revisión de precios (`revision_manual/precios_bajos.csv`, `revision_manual/precios_bajos_1000.csv` y `revision_manual/precios_ausentes.csv`). Valores vigentes: `sin_precio_en_texto` (69), `no_verificable` (23), `solo_coincide_con_publicado` (15), `precio_recuperado` (14), `error` (13), `anuncio_no_disponible` (8), `despublicado` (8), `cup_requiere_validacion` (5), `ambiguo` (3), `moneda_ambigua` (1), `valor_improbable` (1); vacío en los 1.363 anuncios no revisados. |
+| `precio_reextraido`, `moneda_reextraida` | numérico / categórica | Importe y moneda verificados en la descripción o el título (26 anuncios: 13 de la revisión de precios bajos, 13 de la búsqueda de precios ausentes y 1 de la revisión de precios < 1.000, cuyo precio real era "12,500" USD y no los 125 USD publicados). |
 | `evidencia_precio` | texto | Cita literal de esa evidencia. |
 | `texto_evidencia`, `observacion` | texto | Contexto de la revisión manual. |
 | `precio_analisis` | numérico | Precio que usan conversión, comparativo, segmentación, clustering y preguntas. Reglas: reextracción verificada → campo publicado si no está sospechoso y tiene moneda → vacío. **No se imputa.** |
 | `moneda_analisis` | categórica | Moneda asociada a `precio_analisis`. |
-| `origen_precio` | categórica | `campo_publicado` (1.385), `reextraccion_manual` (25), `excluido` (122). |
+| `origen_precio` | categórica | `campo_publicado` (1.363), `reextraccion_manual` (26), `excluido` (134). |
 
 ### 9.4 Ubicación y municipios
 
@@ -179,9 +179,10 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 
 | Artefacto | Contenido |
 |---|---|
-| `outputs/integracion/anuncios_no_residenciales_*.csv` | 6 anuncios apartados por veredicto (4 productos, 1 permuta, 1 local comercial). |
+| `outputs/integracion/anuncios_no_residenciales_*.csv` | Anuncios apartados por veredicto (`producto`, `permuta`, `otro`, `alquiler`): 6 de la pasada previa y 9 alquileres de la revisión de precios < 1.000. |
 | `outputs/integracion/anuncios_fuera_de_alcance_*.csv` | 28 anuncios apartados por alcance (13 fuera de La Habana, 15 que no son vivienda). |
 | `revision_manual/exclusiones_alcance.csv` | Auditoría de esas 28 exclusiones: URL exacta, motivo y evidencia. Se emparejan por URL, no por posición. |
+| `revision_manual/precios_bajos_1000.csv` | Revisión manual de 23 anuncios con precio de análisis < 1.000 y de los alquileres detectados en el catálogo: 9 `alquiler` (salen del maestro), 9 `no_verificable` (el anuncio se conserva sin precio), 4 `despublicado` y 1 `precio_recuperado` (12.500 USD, con la cita "Precio: 12,500"). |
 | `revision_manual/alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión de la investigadora (20/10/2026: todo lo que sea venta de inmueble es válido). Columnas: `fuente`, `id_local`, `url`, `motivo`, `evidencia`, `titulo`, `fecha_revision`, `estado` (`incluido_en_analisis`), `fecha_decision`, `decisor`, `nota`, `caveat_analisis` (advertencia de que el precio puede incluir tierra, licencia o equipamiento). |
 
 El maestro vigente incluye 1.532 fichas: 1.566 capturadas − 6 no residenciales − 28 fuera de alcance. Ninguna URL excluida aparece en el maestro (control automático).

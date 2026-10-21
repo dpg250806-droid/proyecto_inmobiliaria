@@ -105,13 +105,15 @@ Reglas ya aplicadas que deben mantenerse en cualquier tarea nueva:
 - **Alcance dudoso (resuelto el 20/10/2026)**: los 14 anuncios de venta de inmueble con uso mixto o dudoso **se mantienen** en el análisis, marcados en `alcance_dudoso` y listados en `revision_manual/alcance_dudoso.csv` con motivo, decisión y advertencia. Toda afirmación debe ir acompañada de la prueba de sensibilidad (medianas con y sin esas fichas).
 - **Municipios**: solo se homologan los 15 municipios de La Habana (`ubicaciones.py`). Las zonas o barrios de Cubisima no se imputan como municipio.
 - **Precios**: `precio_original`/`moneda` conservan lo publicado; `precio_analisis`/`moneda_analisis` usan la reextracción manual verificada y excluyen lo sospechoso. No se corrige el campo publicado.
+- **Precios < 1.000 (20/10/2026)**: todo anuncio con precio de análisis por debajo de 1.000 se revisa contra su ficha individual. Se retiraron 9 alquileres publicados en el catálogo de venta (veredicto `alquiler`) y se dejaron sin precio 13 anuncios no verificables; un anuncio se reextrajo con la cita "Precio: 12,500" (12.500 USD). El mínimo de precio utilizable del maestro es 1.000 CUC y 1.200 USD.
 - **EUR**: se conserva en euros porque la descripción del vendedor lo dice literalmente, aunque el JSON-LD de HogarEnCuba indique USD; el conflicto se documenta y no se interpreta (n=3).
 - **CUP**: queda marcado como sospechoso y fuera de toda conversión.
 - **CUC**: solo se convierte con la paridad nominal declarada 1 CUC = 1 USD, nunca como tasa de mercado.
 - **Tasas (20/10/2026)**: USD 815 informal / 710,50 formal; EUR 910 / 796,26 (ElToque, leídas a mano por bloqueo 403 y registradas con `tasas_cambio.py --observacion`). Toda cifra convertida cita esa fecha y esa fuente; no se actualizan sin volver a registrar.
 - **Superficie (m²)**: fuera del análisis; ninguna fuente la publica de forma sistemática.
 - **Gráficos y tablas**: excluir monedas con n<5, combinaciones fuente-moneda con n<10 y grupos con n<5, anotando las exclusiones en la propia figura.
-- **Segmentación**: terciles (33/66), no cuartiles. **Clustering**: k=3 por moneda, con etiquetas económico/medio/alto ordenadas por mediana.
+- **Segmentación**: terciles (33/66), no cuartiles. **Clustering**: k-means (k=3) por moneda sobre **log(precio)**, habitaciones y baños, con 10 reinicios y etiquetas económico/medio/alto ordenadas por mediana; la solución se prueba con 5 semillas (`outputs/clustering/estabilidad_clusters_*.csv`).
 - **Sesgo de disponibilidad**: 153 anuncios de Revolico ya no son accesibles; se marcan con su ventana de despublicación y no se descartan.
 - **Tiempo**: sin serie temporal de precios; no se atribuye la evolución ni el efecto de la migración de forma cuantitativa.
+- **Fuentes externas**: el contraste con prensa y análisis publicados vive en `fuentes_externas.md`, con su tipo, fecha, limitación y el contraste contra las cifras del maestro. Se citan como contexto y nunca como medición propia; las fuentes con interés comercial se señalan como tales.
 - **Informe final**: no se redacta sin autorización expresa del usuario.

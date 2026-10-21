@@ -1,50 +1,64 @@
 # Informe preliminar del mercado inmobiliario de La Habana
 
 **Corte de datos:** 19/10/2026 · **Tasas:** 20/10/2026 · **Revisión del documento:** 20/10/2026
-**Base integrada:** `outputs/integracion/dataset_maestro_20261020_193305.csv` — 1.532 anuncios (Revolico 755, Cubisima 594, HogarEnCuba 183), 0 identificadores duplicados y 0 URL repetidas.
-**Estado:** documento de resultados consolidado. No es todavía el informe final; el cierre académico (discusión, limitaciones y bibliografía) queda pendiente de autorización expresa.
+**Base integrada:** `outputs/integracion/dataset_maestro_20261020_214356.csv` — 1.523 anuncios (Revolico 754, Cubisima 586, HogarEnCuba 183), 0 identificadores duplicados y 0 URL repetidas.
+**Estado:** documento de resultados consolidado. No es todavía el informe final; el cierre académico (discusión, limitaciones y referencias) queda pendiente de autorización expresa.
 
 ---
 
 ## 1. Alcance, trazabilidad y exclusiones
 
-La base se construyó en tres pasos documentados, sin modificar ningún archivo original:
+La base se construyó en pasos documentados, sin modificar ningún archivo original:
 
 | Paso | Fichas | Criterio |
 |---|---:|---|
 | Captura inicial | 1.566 | 780 de Revolico, 598 de Cubisima, 188 de HogarEnCuba |
 | Exclusión por tipo de anuncio (pasada previa) | −6 | 4 productos, 1 permuta y 1 local comercial: no son vivienda en venta |
-| Exclusión por alcance geográfico y de uso (pasada actual) | −28 | 13 fuera de La Habana y 15 que no son vivienda |
-| **Maestro vigente** | **1.532** | 100 % con identificador y URL únicos |
+| Exclusión por alcance geográfico y de uso | −28 | 13 fuera de La Habana y 15 que no son vivienda |
+| Exclusión por alquiler publicado en el catálogo de venta | −9 | 8 de Cubisima y 1 de Revolico: la descripción dice "se renta", "renta lineal" o "precio X USD mensual" |
+| **Maestro vigente** | **1.523** | 100 % con identificador y URL únicos |
 
-- La auditoría de las 28 exclusiones está en `revision_manual/exclusiones_alcance.csv`, con URL exacta, motivo y evidencia; ninguna de esas URL aparece en el maestro (control automático: 0 coincidencias).
-- Las 28 fichas excluidas no se descartan: quedan disponibles para studies de alcance y para responder "qué no es vivienda en La Habana".
-- **14 anuncios de alcance dudoso se conservan** en el maestro por decisión de la investigadora (20/10/2026: *todo lo que sea venta de inmueble es válido*): 6 fincas, 2 de uso mixto, 1 local adaptado a vivienda, 1 hostal, 1 casa-restaurante, 1 casa con bar, 1 almacén y 1 casa con finca. Quedan marcados en `alcance_dudoso` (columna del maestro) y listados en `revision_manual/alcance_dudoso.csv` con motivo, evidencia y la advertencia de que su precio puede incluir tierra, licencia o equipamiento del negocio. La **sensibilidad es nula**: al retirarlos, ninguna mediana por fuente y moneda se mueve (0,00 % de desplazamiento; tabla 9b en `outputs/preguntas/`).
-- La unidad de análisis es **el anuncio**, no la transacción cerrada. Ningún precio se imputa: cuando un campo no existe, no extraído o requiere revisión manual, queda marcado con esa distinción (`precio_sospechoso`, `veredicto_revision`, `origen_precio`).
+- La auditoría de las 28 exclusiones de alcance está en `revision_manual/exclusiones_alcance.csv` (URL exacta, motivo y evidencia); ninguna de esas URL aparece en el maestro.
+- Los **9 alquileres** y el resto de la revisión de precios raros están en `revision_manual/precios_bajos_1000.csv`, con el fragmento de descripción que lo demuestra.
+- **14 anuncios de alcance dudoso se conservan** por decisión de la investigadora (20/10/2026: *todo lo que sea venta de inmueble es válido*): 6 fincas, 2 de uso mixto, 1 local adaptado a vivienda, 1 hostal, 1 casa-restaurante, 1 casa con bar, 1 almacén y 1 casa con finca. Quedan marcados en `alcance_dudoso` y listados en `revision_manual/alcance_dudoso.csv`. La **sensibilidad es nula**: al retirarlos, ninguna mediana por fuente y moneda se mueve (0,00 %; tabla 9b en `outputs/preguntas/`).
+- La unidad de análisis es **el anuncio**, no la transacción cerrada. Ningún precio se imputa: cuando un campo no existe, no se extrajo o requiere revisión manual, queda marcado con esa distinción (`precio_sospechoso`, `veredicto_revision`, `origen_precio`).
+
+### 1.1 Auditoría de precios "raros" (umbral < 1.000)
+
+Se revisaron uno a uno **23 anuncios** con precio de análisis inferior a 1.000 (más los alquileres detectados en el catálogo), consultando la ficha individual de cada anuncio (Cubisima y Revolico, 20/10/2026) y leyendo título, descripción y campo de precio:
+
+| Resultado | Anuncios | Detalle |
+|---|---:|---|
+| **Alquileres** (salen del maestro de ventas) | 9 | 8 de Cubisima (el "precio" publicado es la renta mensual) y 1 de Revolico ("se rebaja poco a poco del pago de la renta") |
+| **Precio no verificable** (el anuncio se conserva, sin precio) | 9 | Marcadores de precio ("111", "123") o descripciones sin importe; también 4 fichas de Cubisima cuyo importe publicado es compatible con un número truncado (precedente: "18.00" con descripción "18 000 usd") |
+| **Precio reextraído** | 1 | `rev_000163`: la descripción dice "Precio: 12,500" (coma de millares); el campo publicado (125) era la lectura errónea de "12,5" con coma decimal. El precio real es **12.500 USD** |
+| **Anuncios despublicados** (sin precio) | 4 | Comprobados el 20/10/2026; sus importes ("150", "350") no son verificables |
+
+**Consecuencia estadística:** el mínimo de precio utilizable pasó de 100 CUC a 1.000 CUC y de 111 USD a 1.200 USD. Los precios más bajos del catálogo **no son precios de venta**: son rentas mensuales publicadas en la sección de venta, marcadores de "precio a concertar" o errores de lectura de separadores de millares. Este hallazgo se contrasta con la documentación externa en `fuentes_externas.md` (§3).
 
 ## 2. Fuentes y cobertura de datos
 
 | Fuente | Anuncios | Precio (publicado) | Precio (análisis) | Ubicación | Municipio homologado | Habitaciones | Baños | Fecha |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Cubisima | 594 | 91,4 % | 536 (90,2 %) | 100 % | 100 (16,8 %) | 100 % | 100 % | 100 % |
+| Cubisima | 586 | 91,3 % | 524 (89,4 %) | 100 % | 99 (16,9 %) | 100 % | 100 % | 100 % |
 | HogarEnCuba | 183 | 100 % | 183 (100 %) | 100 % | 183 (100 %) | 100 % | 100 % | 88,5 % |
-| Revolico | 755 | 94,6 % | 691 (91,5 %) | 87,0 % | 657 (87,0 %) | 69,9 % | 37,7 % | 79,7 % |
+| Revolico | 754 | 94,6 % | 682 (90,5 %) | 87,0 % | 656 (87,0 %) | 69,9 % | 37,7 % | 79,7 % |
 
-- **Revolico** es el único volumen grande y a la vez el de peor metadato: el campo publicado cubre municipio en 38,0 %, habitaciones en 9,1 %, banos en 0 % y fecha en 0 %. La página individual de cada anuncio sí responde y de ahí se recuperaron municipio (657), fecha (`updatedOnByUser`, 602) y texto completo, que es la base de la reextracción de habitaciones (528) y banos (285). El listado en línea sigue bloqueado por Cloudflare: se trabaja con el HTML guardado y con la ficha individual.
-- **Cubisima** es la fuente estructurada más completa (habitaciones, baños, zona y fecha en el 100 %), y la única con precio masivo en CUC. Su campo `ubicacion` mezcla municipios con zonas y barrios (Siboney, Miramar, Vedado): solo 100 fichas coinciden con uno de los 15 municipios de La Habana, y se conservan como `ubicacion_analisis` sin imputar municipio.
-- **HogarEnCuba** publica el 100 % de los campos estructurados y es la única que declara superficie, pero en 9 de 183 fichas (4,9 %); sus fechas son relativas ("hace 2 años"), por lo que 162 de 183 tienen fecha convertida y no exacta.
+- **Revolico** es el único volumen grande y a la vez el de peor metadato: el campo publicado cubre municipio en 38,1 %, habitaciones en 9,2 %, banos en 0 % y fecha en 0 %. La página individual de cada anuncio sí responde y de ahí se recuperaron municipio (656), fecha (`updatedOnByUser`, 601) y texto completo, base de la reextracción de habitaciones (527) y banos (284). El listado en línea sigue bloqueado por Cloudflare: se trabaja con el HTML guardado y con la ficha individual.
+- **Cubisima** es la fuente estructurada más completa (habitaciones, baños, zona y fecha en el 100 %), y la única con precio masivo en CUC. Su campo `ubicacion` mezcla municipios con zonas y barrios: solo 99 fichas coinciden con uno de los 15 municipios de La Habana, y se conservan como `ubicacion_analisis` sin imputar.
+- **HogarEnCuba** publica el 100 % de los campos estructurados y es la **única** que declara superficie, pero en 9 de 183 fichas (4,9 %); sus fechas son relativas ("hace 2 años"), por lo que 162 de 183 tienen fecha convertida y no exacta.
 - Fechas de Cubisima en formato `dd/mm/yyyy` (rango 17/10/2023 a 12/10/2026, ninguna posterior al corte; se parsean con `dayfirst`, nunca como texto).
 - La superficie (m²) queda **fuera del análisis**: Revolico y Cubisima no la publican de forma sistemática y HogarEnCuba solo en el 4,9 % de las fichas. Se conserva como traza en el maestro.
 
 ## 3. Política de precios y monedas
 
-- 1.410 de 1.532 anuncios (92,0 %) tienen precio de análisis; los 122 restantes se reportan como sin precio, con su motivo.
-- `origen_precio`: 1.385 desde el campo publicado, 25 por reextracción manual documentada (con cita en `evidencia_precio`) y 122 excluidos por ausencia o sospecha.
-- `precio_sospechoso` marca 147 anuncios: **92 porque el campo publicado no declara moneda** (muchos de ellos sí se recuperan del texto) y **55 con un problema real de precio o moneda** (16 precios en CUC, 5 en CUP y 34 en USD). De los 147, 25 siguen siendo utilizables porque la revisión manual recuperó el importe; los 122 restantes quedan sin precio.
+- 1.389 de 1.523 anuncios (91,2 %) tienen precio de análisis; los 134 restantes se reportan como sin precio, con su motivo.
+- `origen_precio`: 1.363 desde el campo publicado, 26 por reextracción manual documentada (con cita en `evidencia_precio`) y 134 excluidos por ausencia o sospecha.
+- `precio_sospechoso` marca 159 anuncios: **92 porque el campo publicado no declara moneda** y **67 con un problema real de precio o moneda** (CUC y CUP incluidos). De los 159, 26 siguen siendo utilizables porque la revisión manual recuperó el importe del texto.
 - **CUP**: los 5 anuncios con precio en CUP quedan marcados y fuera de toda conversión y de toda estadística de precio.
-- **EUR (n=3)**: se conservan en euros porque la descripción del vendedor lo dice literalmente, aunque en HogarEnCuba el título y el JSON-LD digan USD. `HEC1925` (620.000) y `HEC2258` (50.000) son fichas de HogarEnCuba y `cubisima_000018` (48.000) es de Cubisima, con el importe recuperado del texto. El conflicto se documenta como limitación y **no se interpretan** (n<10).
-- **CUC**: 527 anuncios con precio; se valoran con paridad nominal declarada 1 CUC = 1 USD porque no hay tasa de mercado registrada para el CUC. Es una convención de cálculo, no una tasa, y no se presenta como conversión verificada.
-- Conversiones USD/EUR: se aplican la tasa informal y la formal del registro del **20/10/2026** (USD 815 / 710,50; EUR 910 / 796,26), leídas de ElToque. El acceso automático al sitio sigue bloqueado (HTTP 403), por lo que los valores se transcribieron manualmente de la página y quedan en un registro auditable con fecha, fuente y nota, incluida la variación intradía del euro (881,91 por la mañana, 900 a las 13:14 y 910 a las 17:00, de donde se toma la cifra de las 17:00).
+- **EUR (n=3)**: se conservan en euros porque la descripción del vendedor lo dice literalmente, aunque en HogarEnCuba el título y el JSON-LD digan USD. `HEC1925` (620.000) y `HEC2258` (50.000) son de HogarEnCuba y `cubisima_000018` (48.000) es de Cubisima, con el importe recuperado del texto. El conflicto se documenta como limitación y **no se interpretan**.
+- **CUC**: 515 anuncios con precio; se valoran con paridad nominal declarada 1 CUC = 1 USD porque no hay tasa de mercado registrada para el CUC. Es una convención de cálculo, no una tasa, y no se presenta como conversión verificada.
+- Conversiones USD/EUR: tasa informal y formal del registro del **20/10/2026** (USD 815 / 710,50; EUR 910 / 796,26), leída de ElToque. El acceso automático al sitio está bloqueado (HTTP 403), por lo que los valores se transcribieron manualmente y quedan en un registro auditable con fecha, fuente y nota, incluida la variación intradía del euro (881,91 / 900 / 910, de donde se toma la cifra de las 17:00).
 
 ## 4. Resultados por pregunta de investigación
 
@@ -52,14 +66,14 @@ La base se construyó en tres pasos documentados, sin modificar ningún archivo 
 
 | Fuente | Moneda | n | Mediana | Media | Mínimo | Máximo |
 |---|---|---:|---:|---:|---:|---:|
-| Cubisima | CUC | 527 | 25.000 | 52.228 | 100 | 800.000 |
+| Cubisima | CUC | 515 | 25.000 | 53.437 | 1.000 | 800.000 |
 | Cubisima | USD | 8 | 19.000 | 27.688 | 5.000 | 90.000 |
 | Cubisima | EUR | 1 | 48.000 | 48.000 | 48.000 | 48.000 |
 | HogarEnCuba | USD | 181 | 60.000 | 127.254 | 5.500 | 1.300.000 |
 | HogarEnCuba | EUR | 2 | 335.000 | 335.000 | 50.000 | 620.000 |
-| Revolico | USD | 691 | 25.000 | 49.903 | 111 | 900.000 |
+| Revolico | USD | 682 | 25.000 | 50.577 | 1.200 | 900.000 |
 
-La mediana es el centro robusto: las medias quedan muy por encima porque hay una cola de anuncios caros (hasta 1,3 millones en HogarEnCuba). Solo USD es comparable entre fuentes; las filas con n<10 (Cubisima USD n=8, EUR n=1 y n=2) se muestran por trazabilidad y no se interpretan.
+La mediana es el centro robusto: las medias quedan muy por encima por la cola de anuncios caros (hasta 1,3 millones en HogarEnCuba). Solo USD es comparable entre fuentes; las filas con n<10 (Cubisima USD n=8, EUR n=1 y n=2) se muestran por trazabilidad y no se interpretan. **Las medianas no cambiaron respecto de la versión anterior a la auditoría de precios** (25.000 / 25.000 / 60.000): la limpieza de artefactos afectan a la cola, no al centro.
 
 ### 4.2 Variación entre municipios (pregunta secundaria 2)
 
@@ -67,21 +81,23 @@ Municipios homologados (solo los 15 de La Habana; n≥5 por fuente y moneda; USD
 
 | Municipio | Revolico (n; mediana) | HogarEnCuba (n; mediana) |
 |---|---|---|
-| Playa | 134; 50.000 | 48; 142.500 |
+| Playa | 130; 50.000 | 48; 142.500 |
 | Plaza de la Revolución | 87; 45.000 | 38; 77.500 |
 | Diez de Octubre | 95; 35.000 | 15; 55.000 |
-| Habana del Este | 37; 25.000 | 11; 75.000 |
+| Habana del Este | 35; 25.000 | 11; 75.000 |
 | Habana Vieja | 31; 28.000 | 6; 46.500 |
 | Boyeros | 23; 23.500 | 6; 85.000 |
-| Cerro | 30; 15.000 | 13; 21.000 |
-| Centro Habana | 79; 15.000 | 19; 35.000 |
 | Arroyo Naranjo | 33; 15.000 | 5; 20.000 |
+| Centro Habana | 79; 15.000 | 19; 35.000 |
+| Cerro | 30; 15.000 | 13; 21.000 |
 | Marianao | 14; 13.250 | 7; 50.000 |
 | La Lisa | 19; 13.000 | 6; 37.500 |
-| Guanabacoa | 12; 8.500 | 3 (n<5) |
 | San Miguel del Padrón | 6; 9.000 | — |
+| Guanabacoa | 12; 8.500 | 3 (n<5) |
+| Cotorro | 2; 5.000 | 1 (n<5) |
+| Regla | — | 3 (n<5) |
 
-El orden de municipios es estable en Revolico (Playa y Plaza arriba; Guanabacoa, San Miguel del Padrón y La Lisa abajo) y HogarEnCuba repite los mismos barrios altos con importes mayores, pero la diferencia entre fuentes (por ejemplo, Playa 50.000 frente a 142.500) es **descriptiva, no causal**: refleja composición y selección de anuncios, no un precio único de mercado. Las zonas de Cubisima (Siboney, Miramar, Vedado, Alamar…) se reportan aparte, sin mezclarlas con municipios.
+El orden de municipios es estable en Revolico (Playa y Plaza arriba; Cotorro, Guanabacoa y San Miguel del Padrón abajo) y HogarEnCuba repite los mismos barrios altos con importes mayores, pero la diferencia entre fuentes (Playa 50.000 frente a 142.500) es **descriptiva, no causal**: refleja composición y selección de anuncios, no un precio único de mercado. Las zonas de Cubisima (Miramar, Plaza, Nuevo Vedado, Playa Santa Fe, Vedado, Habana Vieja…) se reportan aparte, sin mezclarlas con municipios.
 
 ### 4.3 Habitaciones y precio (pregunta secundaria 3)
 
@@ -90,18 +106,18 @@ Correlación de Spearman descriptiva, por fuente y moneda:
 | Fuente | Moneda | Habitaciones (rho; n) | Baños (rho; n) |
 |---|---|---|---|
 | HogarEnCuba | USD | 0,610; 181 | 0,731; 181 |
-| Cubisima | CUC | 0,604; 527 | 0,676; 527 |
-| Revolico | USD | 0,591; 492 | 0,567; 266 |
+| Cubisima | CUC | 0,609; 515 | 0,698; 515 |
+| Revolico | USD | 0,596; 488 | 0,564; 265 |
 | Cubisima | USD | 0,488; 8 (exploratorio) | 0,830; 8 (exploratorio) |
 
 Medianas observadas (solo grupos con n≥5; el detalle con n<5 queda en `outputs/preguntas/preguntas_resueltas_*.md`):
 
 | Habitaciones | Revolico USD (n; mediana) | Cubisima CUC (n; mediana) | HogarEnCuba USD (n; mediana) |
 |---|---|---|---|
-| 1 | 50; 10.500 | 53; 10.000 | 9; 18.000 |
-| 2 | 202; 20.000 | 173; 14.500 | 41; 30.000 |
-| 3 | 158; 42.500 | 142; 35.000 | 41; 55.000 |
-| 4 | 54; 70.000 | 82; 60.000 | 44; 87.500 |
+| 1 | 49; 11.000 | 49; 10.000 | 9; 18.000 |
+| 2 | 200; 20.000 | 169; 15.000 | 41; 30.000 |
+| 3 | 158; 42.500 | 140; 35.000 | 41; 55.000 |
+| 4 | 53; 70.000 | 82; 60.000 | 44; 87.500 |
 | 5 | 11; 75.000 | 26; 92.500 | 15; 160.000 |
 | 6 | 6; 132.500 | 6; 145.000 | 16; 90.000 |
 | 7 | 5; 75.000 | 6; 147.500 | 4 (n<5) |
@@ -111,16 +127,16 @@ La asociación es positiva y consistente en las tres fuentes y en las dos variab
 
 ### 4.4 Características de las viviendas caras (pregunta secundaria 4)
 
-Solo Cubisima publica características auxiliares; se compara el tercio superior de precio con el resto **dentro de CUC** (n=186 con precio ≥ 45.000 frente a n=341):
+Solo Cubisima publica características auxiliares; se compara el tercio superior de precio con el resto **dentro de CUC** (n=186 con precio ≥ 45.000 frente a n=329):
 
 | Característica | % en el tercio superior | % en el resto | Diferencia (pp) |
 |---|---:|---:|---:|
-| Garaje | 65,6 | 18,8 | +46,8 |
+| Garaje | 65,6 | 17,9 | +47,7 |
 | Jardín | 46,8 | 9,4 | +37,4 |
 | Terraza | 54,8 | 26,1 | +28,7 |
-| Patio | 68,3 | 53,1 | +15,2 |
-| Piscina | 13,4 | 2,6 | +10,8 |
-| Balcón | 31,7 | 31,7 | 0,0 |
+| Patio | 68,3 | 53,2 | +15,1 |
+| Piscina | 13,4 | 2,7 | +10,7 |
+| Balcón | 31,7 | 31,9 | −0,2 |
 
 Un 0 significa que la característica no fue declarada en la ficha, no que no exista. En USD no se calcula el tercio superior porque solo hay 8 anuncios de Cubisima con precio en USD.
 
@@ -128,23 +144,23 @@ Un 0 significa que la característica no fue declarada en la ficha, no que no ex
 
 | Canal | Moneda | Anuncios | Mediana | Con habitaciones | Con baños | Fecha de análisis |
 |---|---|---:|---:|---:|---:|---:|
-| Informal — Revolico | USD | 691 | 25.000 | 492 (71,2 %) | 266 (38,5 %) | 80,0 % |
-| Estructurado — Cubisima | CUC | 527 | 25.000 | 527 (100 %) | 527 (100 %) | 100 % |
+| Informal — Revolico | USD | 682 | 25.000 | 488 (71,6 %) | 265 (38,9 %) | 79,7 % |
+| Estructurado — Cubisima | CUC | 515 | 25.000 | 515 (100 %) | 515 (100 %) | 100 % |
 | Estructurado — HogarEnCuba | USD | 181 | 60.000 | 181 (100 %) | 181 (100 %) | 88,4 % |
 
 Diferencias observables entre canales:
 
-1. **Volumen y cobertura**: Revolico aporta 755 fichas con metadato pobre; las plataformas estructuradas aportan menos anuncios con metadato casi completo. Revolver la página de cada anuncio es lo que convierte un clasificado informal en una fuente utilizable.
+1. **Volumen y cobertura**: Revolico aporta 754 fichas con metadato pobre; las plataformas estructuradas aportan menos anuncios con metadato casi completo. Consultar la página de cada anuncio es lo que convierte un clasificado informal en una fuente utilizable.
 2. **Precio**: las medianas USD de Revolico (25.000) y HogarEnCuba (60.000) difieren; la diferencia es de composición (HogarEnCuba publica viviendas más grandes y más caras) y no un "precio del canal".
 3. **Moneda**: Revolico concentra la oferta en USD; Cubisima ofrece CUC masivo; HogarEnCuba casi solo USD. Solo USD es comparable entre canales.
 4. **Transparencia de la oferta**: las zonas de Cubisima son más específicas (barrios turísticos), mientras que Revolico exige reconstruir el municipio desde el texto.
-5. **EUR**: 2 fichas de HogarEnCuba y 1 de Cubisima; no se interpretan.
+5. **Contaminación del catálogo**: solo en el canal informal de plataformas (Cubisima) aparecen alquileres publicados en la sección de venta; el proyecto los detecta y los retira (sección 1.1).
 
 ### 4.6 Conversión de moneda y tasas (pregunta secundaria 7)
 
-- Tasas registradas: **20/10/2026** (USD informal 815, formal 710,50; EUR informal 910, formal 796,26), fuente ElToque; el acceso automático está bloqueado y los valores se transcribieron manualmente de la página (registro en `data/tasas/`).
+- Tasas registradas: **20/10/2026** (USD informal 815, formal 710,50; EUR informal 910, formal 796,26), fuente ElToque; acceso automático bloqueado y valores transcritos manualmente (registro en `data/tasas/`).
 - El mismo precio cambia de valor equivalente según la tasa: la divergencia entre informal y formal es del **14,7 % en USD** y del **14,3 % en EUR**. Es una aritmética de conversión, no una medida de mercado.
-- CUC: 527 anuncios con paridad nominal 1 CUC = 1 USD, mediana equivalente 25.000 USD. No es tasa de mercado y no se usa como precio en dólares.
+- CUC: 515 anuncios con paridad nominal 1 CUC = 1 USD, mediana equivalente 25.000 USD. No es tasa de mercado y no se usa como precio en dólares.
 - EUR: 2 fichas de HogarEnCuba (mediana convertida 374.049 USD) y 1 de Cubisima (53.595 USD): ilustrativas, no estimaciones poblacionales.
 
 ### 4.7 Agrupamiento de las viviendas (pregunta secundaria 6)
@@ -153,77 +169,94 @@ k-means (k=3) por moneda, sobre precio, habitaciones y banos, con casos completo
 
 | Moneda | Grupo | Anuncios | Mediana de precio | Mediana habitaciones | Mediana baños |
 |---|---|---:|---:|---:|---:|
-| CUC | Económico | 238 | 13.000 | 2 | 1 |
-| CUC | Medio | 212 | 38.000 | 3 | 2 |
-| CUC | Alto | 77 | 150.000 | 4,5 | 4 |
-| USD | Económico | 245 | 30.000 | 2 | 1 |
-| USD | Medio | 169 | 85.000 | 4 | 3 |
-| USD | Alto | 24 | 550.000 | 7,5 | 7 |
+| CUC | Económico | 271 | 12.000 | 2 | 1 |
+| CUC | Medio | 190 | 55.000 | 3 | 2 |
+| CUC | Alto | 54 | 120.000 | 5 | 4 |
+| USD | Económico | 215 | 25.000 | 2 | 1 |
+| USD | Medio | 190 | 92.500 | 4 | 3 |
+| USD | Alto | 32 | 425.000 | 7 | 6 |
 
-El patrón es nítido y consistente entre monedas: el grupo alto concentra más habitaciones y más baños que el grupo económico, y el grupo económico son las viviendas más pequeñas. El cluster USD "alto" es pequeño (24 anuncios) y concentra los precios extremos (hasta 1,3 millones): se describe, no se generaliza.
+El patrón es nítido y consistente entre monedas: el grupo alto concentra más habitaciones y más baños, y el económico las viviendas más pequeñas. El cluster USD "alto" es pequeño (32 anuncios) y concentra los precios extremos (hasta 1,3 millones): se describe, no se generaliza.
 
-La segmentación por terciles de precio (33/66) confirma el mismo gradiente dentro de cada moneda: en CUC el tercio alto son 171 anuncios (38 con 5+ habitaciones, mediana 150.000; 109 con 3-4, 72.000; 24 con ≤2, 60.000) y en USD 214 anuncios (57 con 5+, 200.000; 128 con 3-4, 105.000; 29 con ≤2, 80.000). Los perfiles con n<5 (por ejemplo, el grupo económico con 5+ habitaciones) no se interpretan.
+**Estabilidad y decisión metodológica.** Con el precio en escala lineal la solución de k-means dependía de la semilla (en CUC el grupo "alto" variaba entre 30 y 37 anuncios y la mediana del grupo "medio" entre 55.000 y 64.500). Por eso el agrupamiento usa **log(precio)**, que es la forma natural de una distribución de precios multiplicativa, y k-means con **10 reinicios** conservando la solución de menor inercia. Con esa definición la solución es estable: en 5 semillas el tamaño de cada grupo varía en un máximo de 5 anuncios y su mediana en un máximo de 1.000 (`outputs/clustering/estabilidad_clusters_*.csv`).
+
+La segmentación por terciles de precio (33/66) confirma el mismo gradiente dentro de cada moneda: en CUC el tercio alto son 171 anuncios (38 con 5+ habitaciones, mediana 150.000; 109 con 3-4, 72.000; 24 con ≤2, 60.000) y en USD 214 anuncios (57 con 5+, 200.000; 128 con 3-4, 105.000; 29 con ≤2, 80.000). Los perfiles con n<5 no se interpretan.
 
 ### 4.8 Migración, oferta y demanda (pregunta secundaria 8)
 
-Con los datos disponibles **no es posible medir** el efecto de la migración: la muestra de anuncios es transversal y las fechas útiles de Revolico son casi todas de agosto a octubre de 2026 (1 anuncio de mayo de 2025, 2 de agosto, 111 de septiembre y 488 de octubre de 2026 sobre 602 fechas de página). No hay serie temporal de precios ni de oferta, y por tanto no existe panel 2020-2026 que permita separar migración, crisis económica, desmonetización y tasa de cambio. Lo que sí puede afirmarse es que la evidencia transversal es **compatible** con la hipótesis de una oferta presionada: el grupo económico concentra 245 de los 438 casos completos en USD (mediana 30.000) y 238 de 527 en CUC (mediana 13.000), y en HogarEnCuba la media (127.254) está muy por encima de la mediana (60.000) por el peso de los anuncios caros. La verificación de esa hipótesis requiere la serie temporal que este proyecto no tiene.
+Con los datos disponibles **no es posible medir** el efecto de la migración: la muestra de anuncios es transversal y las fechas útiles de Revolico son casi todas de agosto a octubre de 2026 (1 anuncio de mayo de 2025, 2 de agosto, 111 de septiembre y 487 de octubre de 2026 sobre 601 fechas de página). No hay serie temporal de precios ni de oferta, y por tanto no existe panel 2020-2026 que permita separar migración, crisis económica, desmonetización y tasa de cambio.
+
+Lo que sí puede afirmarse es que la evidencia transversal es **compatible** con la hipótesis de una oferta presionada: el grupo económico concentra 215 de los 437 casos completos en USD (mediana 25.000) y 271 de 515 en CUC (mediana 12.000), y en HogarEnCuba la media (127.254) está muy por encima de la mediana (60.000) por el peso de los anuncios caros. La verificación de esa hipótesis requiere la serie temporal que este proyecto no tiene.
 
 ### 4.9 Qué explica el precio y qué queda sin cobertura (pregunta secundaria 9)
 
-- 1.410 de 1.532 anuncios (92,0 %) con precio de análisis; 1.358 con fecha de análisis; 1.434 con ubicación y 940 con municipio homologado; 1.305 con habitaciones, 1.062 con baños y 1.322 con al menos una de las dos variables de tamaño.
-- Lo que el precio explica y los datos no cubren: el 100 % de las habitaciones y los banos no es alcanzable (en Revolico, 153 anuncios son inaccesibles y no tienen descripción, y otros anuncios publicados simplemente no mencionan la cantidad; el campo publicado solo trae habitaciones en 69 fichas y nunca trae banos, mientras el texto, el título o el enlace permiten obtener 528 habitaciones y 285 banos).
+- 1.389 de 1.523 anuncios (91,2 %) con precio; 1.349 con fecha de análisis; 1.433 con ubicación y 938 con municipio homologado; 1.297 con habitaciones, 1.053 con baños y 1.316 con al menos una de las dos variables de tamaño.
+- El techo de las variables de tamaño lo fija el texto del anuncio: en Revolico, 153 anuncios son inaccesibles y no tienen descripción, y otros anuncios publicados no mencionan la cantidad; el campo publicado solo trae habitaciones en 69 fichas y nunca trae banos, mientras el texto, el título o el enlace permiten obtener 527 habitaciones y 284 banos.
 - La cobertura de la superficie no llega al 100 % en ninguna fuente, por lo que **no se usa como variable explicativa**.
-- Las 14 fichas de alcance dudoso y las 122 sin precio verificable son el faltante principal: ninguna se resuelve por imputación.
+- Las 14 fichas de alcance dudoso y los 134 anuncios sin precio verificable son el faltante principal: ninguna se resuelve por imputación.
 
-## 5. Triangulación con entrevistas anónimas
+## 5. Triangulación con fuentes externas
+
+El contraste con el registro publicado sobre el mercado habitacional habanero está documentado en [`fuentes_externas.md`](fuentes_externas.md) (7 fuentes consultadas el 20/10/2026: una agencia de prensa —AFP/France24—, un medio digital y cuatro análisis de una agencia inmobiliaria con interés comercial). En síntesis:
+
+- **Dirección coincidente.** AFP (24/04/2026) describe una reanimación del mercado en 2026 con precios al alza en Miramar, Nuevo Vedado y Vedado, y valores **40-50 % por debajo** del máximo del deshielo diplomático; los análisis comerciales (junio y octubre de 2025, septiembre de 2026) estiman caídas reales del **40-60 %** en cinco años y citan el éxodo de más de 1,5 millones de emigrados desde 2020 como causa de la sobreoferta. Las entrevistas del proyecto coinciden en el mecanismo (8 de 10 nombran la migración como factor dominante).
+- **Magnitud no verificable aquí.** El proyecto no puede medir esa caída: su muestra es transversal. Lo que sí muestra es que nuestros precios pedidos de octubre de 2026 son del mismo orden de magnitud que los "precios actuales" de esas fuentes, y que en los municipios periféricos nuestras medianas coinciden con sus promedios orientativos (San Miguel del Padrón 9.000 frente a 8.000; Guanabacoa 8.500 frente a 9.000; Centro Habana 15.000 dentro de su banda 12.000-40.000).
+- **Divergencia que el proyecto resuelve.** Una de esas fuentes afirma que "en zonas vulnerables se llegaron a vender casas por 100, 200, 600 dólares". La auditoría de precios <1.000 muestra que, en el catálogo de 2026, los anuncios en ese rango son **alquileres publicados en la sección de venta**, marcadores de precio o errores de lectura de separadores de millares. Es una advertencia metodológica: esas cifras no son contrastables y el proyecto las depura en lugar de reproducirlas.
+- **Límite de fuente.** El organismo oficial de estadística (ONEI) no fue accesible desde el entorno de trabajo y no se consultó ningún índice oficial de precios de vivienda: no existe una serie pública que contrastar.
+
+## 6. Triangulación con entrevistas anónimas
 
 Base: 10 entrevistas (E01–E10; 15/10/2026 a 19/10/2026) procesadas con `procesar_entrevistas.py`, que anonimiza, no persiste metadatos personales y codifica temas con palabras clave acento-insensibles. Salidas auditables: `outputs/entrevistas/entrevistas_codificadas_*.csv` (códigos C1–C7) y `resumen_entrevistas_*.md` (respuestas literales). Perfil: 4 propietarios, 2 inquilinos, 2 herederos, 1 asesor inmobiliario y 1 familiar de propietarios; viviendas de referencia en 10 de Octubre (5), Plaza de la Revolución (2), Centro Habana (2) y Playa (1). Es una muestra pequeña, no probabilística y autoseleccionada: describe percepciones y mecanismos, no prevalencias ni causalidad.
 
 - **Migración**: las 10 respuestas la mencionan (C2 = 10/10) y 8 de 10 la nombran dentro del factor dominante (E02–E04 y E06–E09 la eligen como factor único o principal; E05 la combina priorizando la crisis económica; E01 señala solo la crisis; E10 señala los tres factores sin elegir uno). Mecanismo repetido: la emigración aumentó la oferta de casas para financiar la salida, la demanda local sin dinero cayó y la urgencia empujó los precios a la baja (E07: ventas "con todo dentro hasta por 4 mil dólares"; E09: caídas percibidas "hasta un 50 %"; E10: vender "para poder tener liquidez y solvencia para salir del país"). Son percepciones: el proyecto no tiene serie temporal y no puede medir ni refutar esa caída.
 - **Evolución percibida desde 2020**: 7 de 10 describen descenso (E02–E04, E06–E09), 1 no distingue (E01), 1 percibe un periodo variable con posible revalorización (E05) y 1 un "aumento sin límites" por inflación (E10). Se reporta como disenso, sin promediar percepciones.
 - **Urgencia y necesidad** (pregunta 9): 8 de 10 mencionan urgencia, necesidad de dinero o emigración como motivo de la reducción (E01–E04, E06, E07, E09, E10); 2 el estado o la ubicación (E05, E08). Coincide con C1 (necesidad o urgencia) presente en 9 de 10. La motivación no se observa en los anuncios y no se estima.
-- **Ubicación**: 6 de 10 la nombran factor principal (E01, E02, E05, E06, E09, E10), 2 el estado constructivo (E03, E07) y 2 el tamaño (E04, E08). En los anuncios la dirección es la misma y medible (Revolico USD: Playa 50.000 con n=134 frente a Plaza 45.000 con n=87 y municipios bajos con n≥10), como asociación descriptiva, sin estimar cuánto aporta la ubicación.
-- **Moneda y tasas**: 8 de 10 mencionan moneda o tasas (C3) y describen precios anclados en divisas con tasas que afectan sobre todo a la conversión a moneda nacional (E04: "la vivienda tiene un precio en usd y las tasas solo influyen para el cambio a mn"; E10: "todo se rige por la tasa de cambio"). En los datos, los precios utilizables están casi todos en divisas (880 USD, 527 CUC nominal, 3 EUR) y los 5 en CUP quedaron marcados como sospechosos: la percepción tiene contraparte en el registro.
+- **Ubicación**: 6 de 10 la nombran factor principal (E01, E02, E05, E06, E09, E10), 2 el estado constructivo (E03, E07) y 2 el tamaño (E04, E08). En los anuncios la dirección es la misma y medible (Revolico USD: Playa 50.000 con n=130 frente a Plaza 45.000 con n=87 y municipios bajos con n≥5), como asociación descriptiva, sin estimar cuánto aporta la ubicación.
+- **Moneda y tasas**: 8 de 10 mencionan moneda o tasas (C3) y describen precios anclados en divisas con tasas que afectan sobre todo a la conversión a moneda nacional (E04: "la vivienda tiene un precio en usd y las tasas solo influyen para el cambio a mn"; E10: "todo se rige por la tasa de cambio"). En los datos, los precios utilizables están casi todos en divisas (871 USD, 515 CUC nominal, 3 EUR) y los 5 en CUP quedaron marcados como sospechosos: la percepción tiene contraparte en el registro.
 - **Canales**: 4 de 10 prefieren grupos de Telegram/WhatsApp/Facebook (E01, E02, E08, E09), 4 intermediarios (E03, E04, E05, E10) y 2 plataformas tipo Revolico (E06, E07). La comparación de fuentes apunta en la misma dirección desde el otro lado: las plataformas estructuradas documentan mejor banos y zona que el clasificado informal.
 - Frecuencias de código: C1 necesidad económica 9/10, C2 migración 10/10, C3 moneda y tasa 8/10, C4 canal de venta 4/10, C5 precio alto 7/10, C6 características 2/10, C7 municipio 10/10.
 - El triángulo se queda en evidencia cualitativa: nunca se usa para estimar efectos ni para afirmar que la migración causó un porcentaje de cambio en los precios.
 
-## 6. Limitaciones
+## 7. Limitaciones
 
 1. **Anuncios ≠ transacciones**: se observan precios pedidos, no precios pactados; no hay fecha de operación ni superficies verificadas.
-2. **Sin serie temporal**: 601 de 602 fechas útiles de Revolico son de agosto a octubre de 2026; no hay panel 2020-2026 y no se puede medir evolución de precios ni el efecto de la migración.
-3. **Sesgo de disponibilidad en Revolico**: 153 de 755 anuncios ya no son accesibles (80 despublicados, 73 eliminados). No se descartan: quedan marcados con `fecha_ultima_disponibilidad`, `ventana_despublicacion` y `justificacion_disponibilidad`; la desaparición solo puede acotarse al intervalo 29/09–18/10/2026.
+2. **Sin serie temporal**: 600 de 601 fechas útiles de Revolico son de agosto a octubre de 2026; no hay panel 2020-2026 y no se puede medir evolución de precios ni el efecto de la migración.
+3. **Sesgo de disponibilidad en Revolico**: 153 de 754 anuncios ya no son accesibles (80 despublicados, 73 eliminados). No se descartan: quedan marcados con `fecha_ultima_disponibilidad`, `ventana_despublicacion` y `justificacion_disponibilidad`; la desaparición solo puede acotarse al intervalo 29/09–18/10/2026.
 4. **Cobertura parcial de habitaciones y banos**: el techo lo fija el texto del anuncio (153 inaccesibles y descripciones que omiten la cantidad). La cadena de decisión es descripción → título → campo publicado → enlace; 72 anuncios con cantidades discrepantes quedan marcados en `conflicto_detalle` sin resolverse. No se imputa nada.
-5. **Municipios y zonas no son equivalentes**: solo 940 fichas tienen municipio homologado (Revolico 657, HogarEnCuba 183, Cubisima 100, y en Cubisima el nombre de la zona coincide con un municipio, no con una municipalización). Las zonas de Cubisima se analizan aparte.
-6. **Superficie (m²) excluida**: 0 % en Revolico y Cubisima, 9/183 (4,9 %) en HogarEnCuba.
-7. **Precios en CUP (5) y EUR (3) no interpretables**: los CUP quedan como sospechosos y los EUR se conservan por literalidad de la descripción, en conflicto con el JSON-LD de HogarEnCuba.
-8. **CUC convertido por paridad nominal**: no existe tasa de mercado registrada; la conversión 1:1 es una convención declarada.
-9. **Tasas de referencia, no operadas**: el registro es del 20/10/2026 (un día después del corte de datos) y se leyó de ElToque por transcripción manual porque el acceso automático está bloqueado (HTTP 403); el euro además varió durante el día, por lo que la cifra de referencia es la de las 17:00. Toda cifra convertida cita esa fecha y esa fuente.
-10. **122 anuncios sin precio verificable** (69 sin precio en texto, 16 que solo repiten el precio ya marcado, 14 no verificables, 8 no disponibles, 5 en CUP, 4 despublicados, 3 ambiguos, 1 error, 1 moneda ambigua, 1 valor improbable): son el faltante principal y no se resuelven por imputación. Quedan listados con su motivo y su acción sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`.
-11. **Alcance excluido y su tratamiento**: 34 fichas quedan fuera del maestro (6 no residenciales, 13 fuera de La Habana, 15 no vivienda). Las 14 de alcance dudoso se **mantienen** por decisión de la investigadora (son venta de inmueble) y quedan marcadas en `alcance_dudoso` con su motivo y su advertencia: su precio puede incluir tierra, licencia o equipamiento de negocio, de modo que su interpretación debe hacerse con esa salvedad. La sensibilidad de las medianas es 0,00 %.
-12. **Sin scraping de Revolico ni de redes sociales**: se usa HTML guardado; Facebook y Telegram solo han aportado evidencia manual y la encuesta anónima.
-13. **Muestra de entrevistas no probabilística**: describe mecanismos y percepciones; no estima prevalencias ni efectos.
+5. **Contaminación del catálogo de venta**: nueve anuncios eran alquileres y uno más era una permuta; se retiraron del maestro, pero no se puede descartar que queden casos similares con precios por encima de 1.000. La revisión de alquileres se hizo sobre las 594 fichas de Cubisima y las 754 de Revolico con el texto completo, por lo que la cobertura de esta limpieza es alta, pero no total.
+6. **Precios sin verificar**: 134 anuncios (69 sin precio en texto, 23 no verificables, 15 que solo repiten el precio ya marcado, 8 no disponibles, 8 despublicados, 5 en CUP, 3 ambiguos, 1 error, 1 moneda ambigua, 1 valor improbable) quedan listados con motivo y acción sugerida; no se imputa ninguno.
+7. **Municipios y zonas no son equivalentes**: solo 938 fichas tienen municipio homologado (Revolico 656, HogarEnCuba 183, Cubisima 99, y en Cubisima el nombre de la zona coincide con un municipio, no con una municipalización). Las zonas de Cubisima se analizan aparte.
+8. **Superficie (m²) excluida**: 0 % en Revolico y Cubisima, 9/183 (4,9 %) en HogarEnCuba.
+9. **Precios en CUP (5) y EUR (3) no interpretables**: los CUP quedan como sospechosos y los EUR se conservan por literalidad de la descripción, en conflicto con el JSON-LD de HogarEnCuba.
+10. **CUC convertido por paridad nominal**: no existe tasa de mercado registrada; la conversión 1:1 es una convención declarada y el bloque en CUC puede estar inflado respecto del mercado en USD.
+11. **Tasas de referencia, no operadas**: registro del 20/10/2026 leído a mano de ElToque por bloqueo (HTTP 403), con variación intradía del euro. Toda cifra convertida cita esa fecha y esa fuente.
+12. **Agrupamiento descriptivo**: k-means con k=3 y log(precio) es estable en 5 semillas, pero sigue siendo una partición de los datos disponibles, no una tipología de la vivienda; el grupo "alto" en USD tiene 32 anuncios.
+13. **Fuentes externas con intereses**: cuatro de las siete fuentes contrastadas son blogs de una agencia inmobiliaria con interés comercial; se citan como comentario de mercado y no como medición.
+14. **Sin scraping de Revolico ni de redes sociales**: se usa HTML guardado; Facebook y Telegram solo han aportado evidencia manual y la encuesta anónima.
+15. **Muestra de entrevistas no probabilística**: describe mecanismos y percepciones; no estima prevalencias ni efectos.
 
-## 7. Entregables del proyecto
+## 8. Entregables del proyecto
 
 | Carpeta | Contenido |
 |---|---|
-| `outputs/integracion/` | Maestro integrado (1.532 filas) y registro de integración |
+| `outputs/integracion/` | Maestro integrado (1.523 filas) y registro de integración |
 | `outputs/limpieza_integrada/` | Maestro depurado con columnas de análisis (no sobrescribe los campos publicados) |
 | `outputs/conversiones/` | Precios convertidos con tasa, fecha y método (informal, formal y nominal CUC) |
 | `outputs/comparativos/` | Cobertura por fuente, comparativo por canal y sus gráficos |
 | `outputs/segmentacion/` | Segmentación por terciles (33/66) y perfiles por tamaño |
-| `outputs/clustering/` | k-means por moneda, centroides y dispersión de grupos |
+| `outputs/clustering/` | k-means por moneda, centroides, prueba de estabilidad y dispersión de grupos |
 | `outputs/visualizaciones/` | 8 gráficos de síntesis y resumen tabular |
 | `outputs/entrevistas/` | Entrevistas codificadas (E01–E10) y resumen con citas literales |
 | `outputs/validacion/` | Revisión de precios, lista de pendientes y evidencias de revisión |
-| `outputs/preguntas/` | Respuestas a las 9 preguntas con tablas y notas de interpretación |
-| `revision_manual/` | Decisiones manuales auditadas: precios bajos, precios ausentes, exclusiones de alcance, alcance dudoso |
+| `outputs/preguntas/` | Respuestas a las 9 preguntas con tablas, sensibilidad y notas de interpretación |
+| `revision_manual/` | Decisiones manuales auditadas: precios bajos, precios ausentes, precios <1.000, exclusiones de alcance, alcance dudoso |
 
-Reproducibilidad: `python cifras_control.py` imprime todas las cifras de control de este documento contra el maestro vigente; `python auditoria_revolico.py` verifica la consistencia de la extracción de Revolico; `python control_calidad.py` revisa compilación, documentación y estado de Git; `python -m unittest discover -s tests -t .` ejecuta la batería de pruebas (70 en verde).
+Documentación: `README.md` (estado y catálogo de scripts), `data_dictionary.md` (columnas y políticas), `fuentes_datos.md` (estado de las fuentes), `fuentes_externas.md` (triangulación con la documentación publicada), `matriz_variables_fuentes.md`, `preguntas_investigacion.md`, `cuestionario_entrevistas.md`, `diseno_encuesta_online.md`.
 
-## 8. Pendientes
+Reproducibilidad: `python cifras_control.py` imprime todas las cifras de control de este documento contra el maestro vigente; `python auditoria_revolico.py` verifica la consistencia de la extracción de Revolico; `python control_calidad.py` revisa compilación, documentación y estado de Git; `python -m unittest discover -s tests -t .` ejecuta la batería de pruebas.
+
+## 9. Pendientes
 
 1. ~~Tasas verificadas~~ — **resuelto el 20/10/2026**: registro actualizado (USD 815 / 710,50; EUR 910 / 796,26) y conversiones, gráfico de tasas y respuestas regeneradas.
-2. **Revisión de los 122 precios pendientes** (lista con motivo y acción sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`): decidir caso por caso sin imputar. Las 14 fichas de alcance dudoso ya están resueltas: se mantienen en el análisis, marcadas y con prueba de sensibilidad.
+2. **Revisión de los 134 precios pendientes** (lista con motivo y acción sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`): decidir caso por caso sin imputar.
 3. **Informe final**: redacción académica con discusión, limitaciones y referencias, pendiente de autorización expresa del usuario.
