@@ -30,23 +30,34 @@ def newest(directory, pattern):
     return files[-1]
 
 
-def kmeans(data, k=3, iterations=100, seed=42):
+def kmeans(data, k=3, iterations=100, seed=42, n_init=10):
+    """k-means con reinicios multiple y semilla fija (resultado reproducible).
+
+    Con una sola inicializacion la solucion depende del azar y puede cair en
+    un optimo local pobre; se prueban `n_init` inicializaciones y se conserva
+    la de menor inercia. Con la misma semilla el resultado es siempre el mismo.
+    """
     if len(data) < k:
         raise ValueError("k no puede ser mayor que el número de observaciones.")
-    rng = np.random.default_rng(seed)
-    centroids = data[rng.choice(len(data), size=k, replace=False)]
-    labels = np.full(len(data), -1, dtype=int)
-    for _ in range(iterations):
-        distances = ((data[:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2)
-        new_labels = distances.argmin(axis=1)
-        if np.array_equal(new_labels, labels):
+    mejor = None
+    for intento in range(max(1, n_init)):
+        rng = np.random.default_rng(seed + intento)
+        centroids = data[rng.choice(len(data), size=k, replace=False)]
+        labels = np.full(len(data), -1, dtype=int)
+        for _ in range(iterations):
+            distances = ((data[:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2)
+            new_labels = distances.argmin(axis=1)
+            if np.array_equal(new_labels, labels):
+                labels = new_labels
+                break
             labels = new_labels
-            break
-        labels = new_labels
-        for i in range(k):
-            if np.any(labels == i):
-                centroids[i] = data[labels == i].mean(axis=0)
-    return labels, centroids
+            for i in range(k):
+                if np.any(labels == i):
+                    centroids[i] = data[labels == i].mean(axis=0)
+        inercia = float(((data - centroids[labels]) ** 2).sum())
+        if mejor is None or inercia < mejor[0]:
+            mejor = (inercia, labels, centroids)
+    return mejor[1], mejor[2]
 
 
 def main():
@@ -86,12 +97,19 @@ def main():
 
     data["cluster"] = -1
     center_rows = []
+    stability_rows = []
     for currency, currency_rows in data.groupby("moneda_analisis"):
         x = currency_rows[["precio_analisis", "habitaciones", "banos"]].to_numpy(dtype=float)
-        means = x.mean(axis=0)
-        scales = x.std(axis=0)
+        # El precio se transforma en logaritmo: la distribucion de precios de
+        # vivienda es multiplicativa y, con el precio en escala lineal, la
+        # solucion de k-means depende de la semilla (se comprueba en
+        # `estabilidad_clusters_*.csv`). El precio se vuelve a su escala
+        # original para reportar centroides y medianas.
+        caracteristicas = np.column_stack([np.log(x[:, 0]), x[:, 1], x[:, 2]])
+        means = caracteristicas.mean(axis=0)
+        scales = caracteristicas.std(axis=0)
         scales[scales == 0] = 1
-        x_std = (x - means) / scales
+        x_std = (caracteristicas - means) / scales
         labels, centers_std = kmeans(x_std, k=3)
         # Reordenar los grupos por mediana de precio: 0=economico, 1=medio,
         # 2=alto. Asi el numero del cluster es interpretable y estable entre
@@ -102,6 +120,7 @@ def main():
         labels = np.array([mapa[etiqueta] for etiqueta in labels], dtype=int)
         data.loc[currency_rows.index, "cluster"] = labels
         centers = centers_std * scales + means
+        centers[:, 0] = np.exp(centers[:, 0])
         centers = centers[orden]
         for label, center in enumerate(centers):
             center_rows.append({
@@ -113,11 +132,44 @@ def main():
                 "banos_media": center[2],
             })
 
+        # Estabilidad: se repite el agrupamiento con varias semillas y se
+        # anota el tamaño y la mediana de cada grupo.
+        for semilla in [42, 7, 2024, 99, 123]:
+            etiquetas, _ = kmeans(x_std, k=3, seed=semilla)
+            orden_semilla = (
+                pd.DataFrame({"c": etiquetas, "p": x[:, 0]})
+                .groupby("c")["p"]
+                .median()
+                .sort_values()
+                .index.tolist()
+            )
+            mapa_semilla = {viejo: nuevo for nuevo, viejo in enumerate(orden_semilla)}
+            etiquetas = np.array([mapa_semilla[e] for e in etiquetas])
+            for grupo in range(3):
+                seleccion = etiquetas == grupo
+                stability_rows.append({
+                    "moneda": currency,
+                    "semilla": semilla,
+                    "grupo": grupo,
+                    "etiqueta": ["económico", "medio", "alto"][grupo],
+                    "anuncios": int(seleccion.sum()),
+                    "precio_mediano": float(np.median(x[seleccion, 0])),
+                })
+
     data["cluster_etiqueta"] = data["cluster"].map({0: "económico", 1: "medio", 2: "alto"})
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     data.to_csv(OUT / f"clusters_viviendas_{stamp}.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(center_rows).to_csv(OUT / f"centroides_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
+    estabilidad = pd.DataFrame(stability_rows)
+    estabilidad.to_csv(OUT / f"estabilidad_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
+    print("Estabilidad (tamaño y mediana de cada grupo en 5 semillas):")
+    print(
+        estabilidad.groupby(["moneda", "etiqueta"])
+        .agg({"anuncios": ["min", "max"], "precio_mediano": ["min", "max"]})
+        .round(0)
+        .to_string()
+    )
 
     profile = data.groupby(["moneda_analisis", "cluster", "cluster_etiqueta"]).agg(
         anuncios=("precio_analisis", "count"),
