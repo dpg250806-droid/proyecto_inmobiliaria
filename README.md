@@ -3,7 +3,7 @@
 Proyecto académico que analiza el mercado inmobiliario de La Habana a partir de anuncios reales de tres fuentes cubanas (**Revolico**, **Cubisima** y **HogarEnCuba**), complementados con **10 entrevistas anónimas** y con un registro manual de **tasas de cambio**.
 
 - **Tema:** precio de la vivienda y sus determinantes observables (tamaño, zona, canal, moneda), en el contexto de la crisis económica, la desmonetización del CUC y la migración.
-- **Corte de datos:** 19/10/2026 · **Revisión del estado:** 20/10/2026
+- **Corte de datos:** 19/10/2026 · **Tasas de cambio:** 20/10/2026 · **Revisión del estado:** 20/10/2026
 - **Base de análisis:** 1.532 anuncios (Revolico 755, Cubisima 594, HogarEnCuba 183) con 1.410 precios utilizables (92,0 %).
 - **Naturaleza:** asociación descriptiva y reproducible. No se afirma causalidad y no se imputan valores ausentes.
 
@@ -40,9 +40,10 @@ El detalle de la formulación está en [`preguntas_investigacion.md`](preguntas_
 | Municipios homologados | 940 (solo los 15 de La Habana) |
 | Anuncios de Revolico inaccesibles | 153 (80 despublicados, 73 eliminados) |
 | Fichas excluidas del alcance | 34 (6 no residenciales, 13 fuera de La Habana, 15 no vivienda) |
-| Fichas de alcance dudoso conservadas | 14 (listadas en `revision_manual/alcance_dudoso.csv`) |
+| Fichas de alcance dudoso | 14, **incluidas** por decisión de la investigadora (venta de inmueble) y marcadas en `alcance_dudoso`; sensibilidad de las medianas: 0,00 % |
+| Tasas registradas | 20/10/2026 (USD 815 informal / 710,50 formal; EUR 910 / 796,26) |
 | Entrevistas codificadas | 10 (E01–E10, 15–19/10/2026) |
-| Pruebas automáticas | 68 en verde (`python -m unittest discover -s tests -t .`) |
+| Pruebas automáticas | 70 en verde (`python -m unittest discover -s tests -t .`) |
 
 Detalle por pregunta, tabla y gráfico: `outputs/preguntas/preguntas_resueltas_*.md`.
 
@@ -181,7 +182,7 @@ python -m unittest discover -s tests -t .
 | `precios_bajos.csv` | 37 precios revisados uno a uno contra la descripción |
 | `precios_ausentes.csv` | 142 veredictos de la búsqueda de precios ausentes |
 | `exclusiones_alcance.csv` | 28 exclusiones de alcance con URL, motivo y evidencia |
-| `alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso conservados en el maestro |
+| `alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión (20/10/2026), con motivo, evidencia, decisión y advertencia de interpretación |
 
 ### `outputs/` (resultados derivados, no versionados)
 `integracion/`, `limpieza_integrada/`, `conversiones/`, `comparativos/`, `segmentacion/`, `clustering/`, `visualizaciones/`, `entrevistas/`, `validacion/`, `preguntas/`, `historico/`. Todos los archivos llevan marca de tiempo (`*_AAAAMMDD_HHMMSS.*`); las dos últimas ejecuciones se conservan para comparación.
@@ -194,12 +195,13 @@ python -m unittest discover -s tests -t .
 1. **Un anuncio no es una transacción.** La unidad observada es el anuncio; los precios son pedidos, no pactos.
 2. **Ningún valor se imputa.** Se distinguen *dato inexistente*, *dato no extraído* y *dato pendiente de revisión manual* mediante `precio_sospechoso`, `veredicto_revision` y `origen_precio`.
 3. **Dos columnas, dos realidades.** `precio_original`/`moneda` conservan lo publicado; `precio_analisis`/`moneda_analisis` usan la reextracción manual verificada y excluyen lo sospechoso. El campo publicado nunca se corrige.
-4. **Moneda antes que comparación.** Solo se comparan importes dentro de la misma moneda; el CUC se convierte con paridad nominal declarada (no es tasa de mercado) y el EUR se conserva por literalidad de la descripción, aunque el JSON-LD de HogarEnCuba diga USD.
+4. **Moneda antes que comparación.** Solo se comparan importes dentro de la misma moneda; el CUC se convierte con paridad nominal declarada (no es tasa de mercado) y el EUR se conserva por literalidad de la descripción, aunque el JSON-LD de HogarEnCuba diga USD. Las tasas USD/EUR son las del 20/10/2026 (ElToque, leídas a mano porque el acceso automático está bloqueado) y toda cifra convertida cita esa fecha.
 5. **Municipios homólogos.** Solo los 15 municipios de La Habana; las zonas o barrios de Cubisima se analizan aparte y no se imputan como municipio.
 6. **Umbrales de publicación.** En gráficos se excluyen monedas con n<5, combinaciones fuente-moneda con n<10 y grupos con n<5, y esas exclusiones se anotan en la propia figura.
 7. **Sin causalidad.** Todo resultado se redacta como asociación descriptiva; la migración no se atribuye porcentualmente porque no hay serie temporal.
 8. **Superficie fuera del análisis.** Ninguna fuente la publica de forma sistemática (HogarEnCuba: 9/183).
 9. **Sin scraping de redes sociales.** Facebook y Telegram solo aportan evidencia manual y la encuesta anónima.
+10. **Alcance dudoso incluido, no oculto.** Los 14 anuncios de venta de inmueble con uso mixto o dudoso se mantienen en el análisis (decisión de la investigadora, 20/10/2026), marcados en `alcance_dudoso` y con una prueba de sensibilidad que se publica: ninguna mediana se mueve.
 
 ## 8. Control, pruebas y trazabilidad
 
@@ -225,13 +227,14 @@ Se versionan código, documentación, pruebas y las decisiones manuales auditada
 1. Sin serie temporal de precios: 601 de 602 fechas útiles de Revolico son de agosto a octubre de 2026. No hay panel 2020-2026.
 2. Sesgo de disponibilidad: 153 de 755 anuncios de Revolico ya no son accesibles; se marcan con su ventana de despublicación.
 3. Cobertura parcial de habitaciones (69,9 %) y banos (37,7 %) en Revolico; 72 anuncios con cantidades discrepantes quedan sin resolver.
-4. 122 anuncios sin precio verificable y 14 de alcance dudoso: el faltante principal, que no se resuelve por imputación.
-5. Tasas desactualizadas (registro del 15/10/2026; ElToque bloqueado): las conversiones son ilustrativas hasta que se incorporen valores verificados.
+4. 122 anuncios sin precio verificable: es el faltante principal y no se resuelve por imputación (quedan listados con motivo y acción sugerida en `outputs/validacion/`).
+5. Tasas de referencia, no operadas: el registro es del 20/10/2026 y se leyó de ElToque por transcripción manual (el acceso automático devuelve HTTP 403); el euro varió durante el día y se toma la cifra de las 17:00.
 6. Precios en CUP (5) y EUR (3) no interpretables por volumen o por conflicto de fuente.
 7. Muestra de entrevistas pequeña, no probabilística y autoseleccionada: describe mecanismos, no prevalencias.
+8. Las 14 fichas de alcance dudoso pueden tener un precio que incluye tierra, licencia o equipamiento de negocio: se mantienen, se marcan y se prueban.
 
 ## 11. Pendientes
 
-1. **Tasas verificadas** (bloqueante para cifras convertidas): `python tasas_cambio.py --usd-informal <valor> --fuente "<fuente>"` y regenerar conversiones y gráficos.
-2. **Revisión conjunta** de los 122 precios pendientes y de las 14 fichas de alcance dudoso, sin imputar.
+1. ~~Tasas verificadas~~ — resuelto el 20/10/2026 (registro actualizado, conversiones y gráficos regenerados).
+2. **Revisión de los 122 precios pendientes**, sin imputar: la lista con motivo y acción sugerida está en `outputs/validacion/precios_pendientes_actualizado_*.csv`.
 3. **Informe final**: redacción académica con discusión, limitaciones y referencias, pendiente de autorización expresa.

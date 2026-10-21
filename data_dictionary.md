@@ -100,7 +100,7 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 
 ## 9. Maestro integrado
 
-**Archivo vigente:** `outputs/integracion/dataset_maestro_20261019_223630.csv` — 1.532 filas × 57 columnas (Revolico 755, Cubisima 594, HogarEnCuba 183), 0 `id_maestro` duplicados y 0 URLs repetidas. Copia depurada: `outputs/limpieza_integrada/dataset_maestro_depurado_20261019_223920.csv`.
+**Archivo vigente:** `outputs/integracion/dataset_maestro_20261020_193305.csv` — 1.532 filas × 59 columnas (Revolico 755, Cubisima 594, HogarEnCuba 183), 0 `id_maestro` duplicados y 0 URLs repetidas. Copia depurada: `outputs/limpieza_integrada/dataset_maestro_depurado_*.csv`.
 
 ### 9.1 Identificación y procedencia
 
@@ -170,6 +170,8 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 | `vendido` | booleano | `isSold` del anuncio. |
 | `fecha_reextraida` | fecha ISO | `updatedOnByUser`: **fecha de la última actualización**, no de creación ni de venta. No se mezcla con `fecha_publicacion` de otras fuentes. |
 | `evidencia_metadatos` | texto | Archivo de metadatos y URL de origen. |
+| `alcance_dudoso` | booleano | Marca los 14 anuncios de venta de inmueble con uso mixto o dudoso (fincas, hostales, casas con bar o restaurante, almacenes, local adaptado) que **se mantienen** en el análisis por decisión de la investigadora (20/10/2026). Permite medir la sensibilidad sin reintegrar el maestro. |
+| `motivo_alcance_dudoso` | categórica | Motivo de la marca: `finca`, `casa_con_finca`, `uso_mixto`, `hostal`, `casa_restaurante`, `casa_con_bar`, `almacen`, `local_adaptado`. |
 
 **Cobertura honesta:** el techo de habitaciones y banos lo fija el texto del anuncio (153 anuncios inaccesibles y descripciones que omiten la cantidad). No se imputa nada.
 
@@ -177,10 +179,10 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 
 | Artefacto | Contenido |
 |---|---|
-| `outputs/integracion/anuncios_no_residenciales_20261019_223629.csv` | 6 anuncios apartados por veredicto (4 productos, 1 permuta, 1 local comercial). |
-| `outputs/integracion/anuncios_fuera_de_alcance_20261019_223629.csv` | 28 anuncios apartados por alcance (13 fuera de La Habana, 15 que no son vivienda). |
+| `outputs/integracion/anuncios_no_residenciales_*.csv` | 6 anuncios apartados por veredicto (4 productos, 1 permuta, 1 local comercial). |
+| `outputs/integracion/anuncios_fuera_de_alcance_*.csv` | 28 anuncios apartados por alcance (13 fuera de La Habana, 15 que no son vivienda). |
 | `revision_manual/exclusiones_alcance.csv` | Auditoría de esas 28 exclusiones: URL exacta, motivo y evidencia. Se emparejan por URL, no por posición. |
-| `revision_manual/alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **conservados** en el maestro (6 fincas, 2 de uso mixto, 1 local adaptado, 1 hostal, 1 casa-restaurante, 1 casa con bar, 1 almacén, 1 casa con finca), con motivo y evidencia. No se excluyen sin decisión del usuario. |
+| `revision_manual/alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión de la investigadora (20/10/2026: todo lo que sea venta de inmueble es válido). Columnas: `fuente`, `id_local`, `url`, `motivo`, `evidencia`, `titulo`, `fecha_revision`, `estado` (`incluido_en_analisis`), `fecha_decision`, `decisor`, `nota`, `caveat_analisis` (advertencia de que el precio puede incluir tierra, licencia o equipamiento). |
 
 El maestro vigente incluye 1.532 fichas: 1.566 capturadas − 6 no residenciales − 28 fuera de alcance. Ninguna URL excluida aparece en el maestro (control automático).
 
@@ -203,8 +205,8 @@ El export del formulario (CSV o XLSX) se procesa **sin persistir jamás metadato
 ## 12. Tasas y equivalencias
 
 - El registro local de tasas no contiene `cuc_informal_cup` ni `cuc_formal_cup`: **no hay tasa de mercado registrada para el CUC**.
-- Conversión vigente: `outputs/conversiones/dataset_maestro_conversion_20261019_223955.csv` (USD y EUR con tasa informal y formal) y `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_20261019_224013.csv` (paridad nominal 1 CUC = 1 USD, decisión explícita, no tasa de mercado). El método queda en `metodo_conversion_cuc` y la paridad aplicada en `fx_cuc_usd_nominal`. Se conservan importe y moneda originales.
-- Tasas registradas: **15/10/2026** (USD informal 796, formal 673; EUR informal 892, formal 770). ElToque estaba bloqueado y la tasa **no está actualizada al corte**: toda cifra convertida debe citar esa fecha.
+- Conversión vigente: `outputs/conversiones/dataset_maestro_conversion_*.csv` (USD y EUR con tasa informal y formal) y `outputs/conversiones/dataset_maestro_conversion_cuc_nominal_*.csv` (paridad nominal 1 CUC = 1 USD, decisión explícita, no tasa de mercado). El método queda en `metodo_conversion_cuc` y la paridad aplicada en `fx_cuc_usd_nominal`. Se conservan importe y moneda originales.
+- Tasas registradas: **20/10/2026** (USD informal 815, formal 710,50; EUR informal 910, formal 796,26), fuente ElToque. El acceso automático al sitio está bloqueado (HTTP 403), así que los valores se transcribieron manualmente de la página y el registro guarda `estado_acceso = registro_manual` con la nota de auditoría que detalla la captura, la variación intradía del euro (881,91 / 900 / 910) y la fila de la tabla formal usada (BPA, valor de compra). Toda cifra convertida debe citar esa fecha y esa fuente.
 - Los análisis por precio, zona, habitaciones, canal, segmentación y clustering **separan por moneda** y excluyen la moneda desconocida de las comparaciones de importes.
 
 ## 13. Archivos locales y política de Git

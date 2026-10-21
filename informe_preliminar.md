@@ -1,7 +1,7 @@
 # Informe preliminar del mercado inmobiliario de La Habana
 
-**Corte de datos:** 19/10/2026 · **Revisión del documento:** 20/10/2026
-**Base integrada:** `outputs/integracion/dataset_maestro_20261019_223630.csv` — 1.532 anuncios (Revolico 755, Cubisima 594, HogarEnCuba 183), 0 identificadores duplicados y 0 URL repetidas.
+**Corte de datos:** 19/10/2026 · **Tasas:** 20/10/2026 · **Revisión del documento:** 20/10/2026
+**Base integrada:** `outputs/integracion/dataset_maestro_20261020_193305.csv` — 1.532 anuncios (Revolico 755, Cubisima 594, HogarEnCuba 183), 0 identificadores duplicados y 0 URL repetidas.
 **Estado:** documento de resultados consolidado. No es todavía el informe final; el cierre académico (discusión, limitaciones y bibliografía) queda pendiente de autorización expresa.
 
 ---
@@ -19,7 +19,7 @@ La base se construyó en tres pasos documentados, sin modificar ningún archivo 
 
 - La auditoría de las 28 exclusiones está en `revision_manual/exclusiones_alcance.csv`, con URL exacta, motivo y evidencia; ninguna de esas URL aparece en el maestro (control automático: 0 coincidencias).
 - Las 28 fichas excluidas no se descartan: quedan disponibles para studies de alcance y para responder "qué no es vivienda en La Habana".
-- **14 anuncios de alcance dudoso se conservan** en el maestro y quedan listados en `revision_manual/alcance_dudoso.csv`: 6 fincas, 2 de uso mixto, 1 local adaptado a vivienda, 1 hostal, 1 casa-restaurante, 1 casa con bar, 1 almacén y 1 casa con finca. Son anuncios cuyo objeto principal puede no ser una vivienda principal; no se excluyen sin decisión del usuario y se reportan como tales.
+- **14 anuncios de alcance dudoso se conservan** en el maestro por decisión de la investigadora (20/10/2026: *todo lo que sea venta de inmueble es válido*): 6 fincas, 2 de uso mixto, 1 local adaptado a vivienda, 1 hostal, 1 casa-restaurante, 1 casa con bar, 1 almacén y 1 casa con finca. Quedan marcados en `alcance_dudoso` (columna del maestro) y listados en `revision_manual/alcance_dudoso.csv` con motivo, evidencia y la advertencia de que su precio puede incluir tierra, licencia o equipamiento del negocio. La **sensibilidad es nula**: al retirarlos, ninguna mediana por fuente y moneda se mueve (0,00 % de desplazamiento; tabla 9b en `outputs/preguntas/`).
 - La unidad de análisis es **el anuncio**, no la transacción cerrada. Ningún precio se imputa: cuando un campo no existe, no extraído o requiere revisión manual, queda marcado con esa distinción (`precio_sospechoso`, `veredicto_revision`, `origen_precio`).
 
 ## 2. Fuentes y cobertura de datos
@@ -44,7 +44,7 @@ La base se construyó en tres pasos documentados, sin modificar ningún archivo 
 - **CUP**: los 5 anuncios con precio en CUP quedan marcados y fuera de toda conversión y de toda estadística de precio.
 - **EUR (n=3)**: se conservan en euros porque la descripción del vendedor lo dice literalmente, aunque en HogarEnCuba el título y el JSON-LD digan USD. `HEC1925` (620.000) y `HEC2258` (50.000) son fichas de HogarEnCuba y `cubisima_000018` (48.000) es de Cubisima, con el importe recuperado del texto. El conflicto se documenta como limitación y **no se interpretan** (n<10).
 - **CUC**: 527 anuncios con precio; se valoran con paridad nominal declarada 1 CUC = 1 USD porque no hay tasa de mercado registrada para el CUC. Es una convención de cálculo, no una tasa, y no se presenta como conversión verificada.
-- Conversiones USD/EUR: se aplican tasa informal y formal del registro del 15/10/2026 (USD 796 / 673; EUR 892 / 770). ElToque estaba bloqueado y la tasa no está actualizada al corte: queda como pendiente documentado, no como dato cerrado.
+- Conversiones USD/EUR: se aplican la tasa informal y la formal del registro del **20/10/2026** (USD 815 / 710,50; EUR 910 / 796,26), leídas de ElToque. El acceso automático al sitio sigue bloqueado (HTTP 403), por lo que los valores se transcribieron manualmente de la página y quedan en un registro auditable con fecha, fuente y nota, incluida la variación intradía del euro (881,91 por la mañana, 900 a las 13:14 y 910 a las 17:00, de donde se toma la cifra de las 17:00).
 
 ## 4. Resultados por pregunta de investigación
 
@@ -142,11 +142,10 @@ Diferencias observables entre canales:
 
 ### 4.6 Conversión de moneda y tasas (pregunta secundaria 7)
 
-- Tasas registradas: 15/10/2026 (USD informal 796, formal 673; EUR informal 892, formal 770); fuente ElToque bloqueada, valores manuales auditables.
-- El mismo precio en USD cambia de valor equivalente según la tasa: la divergencia entre informal y formal es del orden del 18 % en USD y del 16 % en EUR. Es una aritmética de conversión, no una medida de mercado.
+- Tasas registradas: **20/10/2026** (USD informal 815, formal 710,50; EUR informal 910, formal 796,26), fuente ElToque; el acceso automático está bloqueado y los valores se transcribieron manualmente de la página (registro en `data/tasas/`).
+- El mismo precio cambia de valor equivalente según la tasa: la divergencia entre informal y formal es del **14,7 % en USD** y del **14,3 % en EUR**. Es una aritmética de conversión, no una medida de mercado.
 - CUC: 527 anuncios con paridad nominal 1 CUC = 1 USD, mediana equivalente 25.000 USD. No es tasa de mercado y no se usa como precio en dólares.
-- EUR: 2 fichas de HogarEnCuba (mediana convertida 375.402 USD) y 1 de Cubisima (53.789 USD): ilustrativas, no estimaciones poblacionales.
-- La tasa vigente está desactualizada respecto del corte (pendiente de valores verificados).
+- EUR: 2 fichas de HogarEnCuba (mediana convertida 374.049 USD) y 1 de Cubisima (53.595 USD): ilustrativas, no estimaciones poblacionales.
 
 ### 4.7 Agrupamiento de las viviendas (pregunta secundaria 6)
 
@@ -199,9 +198,9 @@ Base: 10 entrevistas (E01–E10; 15/10/2026 a 19/10/2026) procesadas con `proces
 6. **Superficie (m²) excluida**: 0 % en Revolico y Cubisima, 9/183 (4,9 %) en HogarEnCuba.
 7. **Precios en CUP (5) y EUR (3) no interpretables**: los CUP quedan como sospechosos y los EUR se conservan por literalidad de la descripción, en conflicto con el JSON-LD de HogarEnCuba.
 8. **CUC convertido por paridad nominal**: no existe tasa de mercado registrada; la conversión 1:1 es una convención declarada.
-9. **Tasas desactualizadas**: registro del 15/10/2026 con ElToque bloqueado; las conversiones USD/EUR quedan con esa fecha explícita y son ilustrativas.
-10. **122 anuncios sin precio verificable** (69 sin precio en texto, 16 que solo repiten el precio ya marcado, 14 no verificables, 8 no disponibles, 5 en CUP, 4 despublicados, 3 ambiguos, 1 error, 1 moneda ambigua, 1 valor improbable) y **14 de alcance dudoso**: son el faltante principal y no se resuelven por imputación.
-11. **Alcance excluido y su tratamiento**: 34 fichas quedan fuera del maestro (6 no residenciales, 13 fuera de La Habana, 15 no vivienda); la lista de las 14 dudosas conservadas está en `revision_manual/alcance_dudoso.csv`.
+9. **Tasas de referencia, no operadas**: el registro es del 20/10/2026 (un día después del corte de datos) y se leyó de ElToque por transcripción manual porque el acceso automático está bloqueado (HTTP 403); el euro además varió durante el día, por lo que la cifra de referencia es la de las 17:00. Toda cifra convertida cita esa fecha y esa fuente.
+10. **122 anuncios sin precio verificable** (69 sin precio en texto, 16 que solo repiten el precio ya marcado, 14 no verificables, 8 no disponibles, 5 en CUP, 4 despublicados, 3 ambiguos, 1 error, 1 moneda ambigua, 1 valor improbable): son el faltante principal y no se resuelven por imputación. Quedan listados con su motivo y su acción sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`.
+11. **Alcance excluido y su tratamiento**: 34 fichas quedan fuera del maestro (6 no residenciales, 13 fuera de La Habana, 15 no vivienda). Las 14 de alcance dudoso se **mantienen** por decisión de la investigadora (son venta de inmueble) y quedan marcadas en `alcance_dudoso` con su motivo y su advertencia: su precio puede incluir tierra, licencia o equipamiento de negocio, de modo que su interpretación debe hacerse con esa salvedad. La sensibilidad de las medianas es 0,00 %.
 12. **Sin scraping de Revolico ni de redes sociales**: se usa HTML guardado; Facebook y Telegram solo han aportado evidencia manual y la encuesta anónima.
 13. **Muestra de entrevistas no probabilística**: describe mecanismos y percepciones; no estima prevalencias ni efectos.
 
@@ -221,10 +220,10 @@ Base: 10 entrevistas (E01–E10; 15/10/2026 a 19/10/2026) procesadas con `proces
 | `outputs/preguntas/` | Respuestas a las 9 preguntas con tablas y notas de interpretación |
 | `revision_manual/` | Decisiones manuales auditadas: precios bajos, precios ausentes, exclusiones de alcance, alcance dudoso |
 
-Reproducibilidad: `python cifras_control.py` imprime todas las cifras de control de este documento contra el maestro vigente; `python auditoria_revolico.py` verifica la consistencia de la extracción de Revolico; `python control_calidad.py` revisa compilación, documentación y estado de Git; `python -m unittest discover -s tests -t .` ejecuta la batería de pruebas (68 en verde).
+Reproducibilidad: `python cifras_control.py` imprime todas las cifras de control de este documento contra el maestro vigente; `python auditoria_revolico.py` verifica la consistencia de la extracción de Revolico; `python control_calidad.py` revisa compilación, documentación y estado de Git; `python -m unittest discover -s tests -t .` ejecuta la batería de pruebas (70 en verde).
 
 ## 8. Pendientes
 
-1. **Tasas verificadas** (bloqueante para cualquier cifra en dólares convertidos): incorporar valores confirmados por el usuario con `tasas_cambio.py --usd-informal ... --fuente ...` y regenerar conversiones y gráficos.
-2. **Revisión conjunta de los 122 precios pendientes** y de las 14 fichas de alcance dudoso: decidir caso por caso sin imputar.
+1. ~~Tasas verificadas~~ — **resuelto el 20/10/2026**: registro actualizado (USD 815 / 710,50; EUR 910 / 796,26) y conversiones, gráfico de tasas y respuestas regeneradas.
+2. **Revisión de los 122 precios pendientes** (lista con motivo y acción sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`): decidir caso por caso sin imputar. Las 14 fichas de alcance dudoso ya están resueltas: se mantienen en el análisis, marcadas y con prueba de sensibilidad.
 3. **Informe final**: redacción académica con discusión, limitaciones y referencias, pendiente de autorización expresa del usuario.

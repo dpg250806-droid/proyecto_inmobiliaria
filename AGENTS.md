@@ -101,12 +101,14 @@ Analizar el mercado inmobiliario de La Habana a partir de anuncios reales, disti
 
 Reglas ya aplicadas que deben mantenerse en cualquier tarea nueva:
 
-- **Alcance**: el maestro excluye 6 anuncios no residenciales y 28 fuera de alcance (13 fuera de La Habana, 15 no vivienda). Las exclusiones se auditan por URL en `revision_manual/exclusiones_alcance.csv`; 14 anuncios de alcance dudoso se conservan y se listan en `revision_manual/alcance_dudoso.csv`.
+- **Alcance**: el maestro excluye 6 anuncios no residenciales y 28 fuera de alcance (13 fuera de La Habana, 15 no vivienda). Las exclusiones se auditan por URL en `revision_manual/exclusiones_alcance.csv`.
+- **Alcance dudoso (resuelto el 20/10/2026)**: los 14 anuncios de venta de inmueble con uso mixto o dudoso **se mantienen** en el análisis, marcados en `alcance_dudoso` y listados en `revision_manual/alcance_dudoso.csv` con motivo, decisión y advertencia. Toda afirmación debe ir acompañada de la prueba de sensibilidad (medianas con y sin esas fichas).
 - **Municipios**: solo se homologan los 15 municipios de La Habana (`ubicaciones.py`). Las zonas o barrios de Cubisima no se imputan como municipio.
 - **Precios**: `precio_original`/`moneda` conservan lo publicado; `precio_analisis`/`moneda_analisis` usan la reextracción manual verificada y excluyen lo sospechoso. No se corrige el campo publicado.
 - **EUR**: se conserva en euros porque la descripción del vendedor lo dice literalmente, aunque el JSON-LD de HogarEnCuba indique USD; el conflicto se documenta y no se interpreta (n=3).
 - **CUP**: queda marcado como sospechoso y fuera de toda conversión.
 - **CUC**: solo se convierte con la paridad nominal declarada 1 CUC = 1 USD, nunca como tasa de mercado.
+- **Tasas (20/10/2026)**: USD 815 informal / 710,50 formal; EUR 910 / 796,26 (ElToque, leídas a mano por bloqueo 403 y registradas con `tasas_cambio.py --observacion`). Toda cifra convertida cita esa fecha y esa fuente; no se actualizan sin volver a registrar.
 - **Superficie (m²)**: fuera del análisis; ninguna fuente la publica de forma sistemática.
 - **Gráficos y tablas**: excluir monedas con n<5, combinaciones fuente-moneda con n<10 y grupos con n<5, anotando las exclusiones en la propia figura.
 - **Segmentación**: terciles (33/66), no cuartiles. **Clustering**: k=3 por moneda, con etiquetas económico/medio/alto ordenadas por mediana.
