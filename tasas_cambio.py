@@ -136,6 +136,14 @@ def main():
     parser.add_argument("--cuc-formal", type=float, help="Tasa manual verificada formal CUC->CUP.")
     parser.add_argument("--fuente-cuc", help="Fuente independiente que respalda la tasa CUC/CUP manual.")
     parser.add_argument("--fuente", default="ElToque", help="Fuente registrada.")
+    parser.add_argument(
+        "--observacion",
+        help=(
+            "Nota de auditoria que se guarda en el registro de tasas: pagina consultada, "
+            "hora de la lectura, filas de la tabla formal usadas y variacion intradiaria "
+            "de la tasa informal, si la hubo."
+        ),
+    )
     args = parser.parse_args()
     for name in ("cuc_informal", "cuc_formal"):
         value = getattr(args, name)
@@ -168,9 +176,13 @@ def main():
         "metodo_acceso": ", ".join(a["method"] for a in attempts) if attempts else "manual",
         "intentos": str(attempts).replace("\"", "'"),
         "observacion": (
-            "Si los valores automaticos salieron vacios, registrar tasas manuales verificadas o cargar HTML local. "
-            "CUC no se consulta automaticamente; sus campos solo se registran con una tasa manual verificada. "
-            "Las tasas formal/informal deben usarse solo para conversion documental."
+            args.observacion
+            if args.observacion
+            else (
+                "Si los valores automaticos salieron vacios, registrar tasas manuales verificadas o cargar HTML local. "
+                "CUC no se consulta automaticamente; sus campos solo se registran con una tasa manual verificada. "
+                "Las tasas formal/informal deben usarse solo para conversion documental."
+            )
         ),
     }
 
