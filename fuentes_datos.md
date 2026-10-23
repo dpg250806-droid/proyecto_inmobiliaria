@@ -11,10 +11,10 @@ Esta auditoría fue completamente offline: los estados de acceso web describen l
 - URL base usada: `https://www.revolico.com/search?category=inmobiliaria&subcategory=inmobiliaria-casas&province=la-habana`
 - Estado online: **bloqueado por Cloudflare/anti-bot** para scraping automático (HTTP 403; Playwright y Selenium reciben la página "Un momento..."). Solución operativa: guardar las páginas HTML y procesarlas localmente.
 - Datos actuales: 780 anuncios únicos extraídos de 8 páginas HTML locales; **748** entran al maestro vigente.
-- La **página individual de cada anuncio sí responde**: de ahí se extraen municipio, fecha (`updatedOnByUser`) y descripción completa, y con el texto se reconstruyen habitaciones y baños.
+- La **página individual de cada anuncio sí respondía** (hasta el 18/10/2026): de ahí se extraen municipio, fecha (`updatedOnByUser`) y descripción completa, y con el texto se reconstruyen habitaciones y baños.
 - Fortaleza: gran volumen y precios en USD.
 - Limitaciones: municipio ausente en el campo publicado (286/748; 38,2 %), habitaciones en 69/748 (9,2 %), baños en 0 % y fecha en 0 %; superficie nunca. 153 de 748 anuncios ya no son accesibles (80 despublicados, 73 eliminados).
-- Prueba de actualización del 22/10/2026 por `requests`: HTTP 403; el listado en línea sigue bloqueado. El modo local procesó 111 anuncios de una página guardada sin acceso a la red; no es una nueva captura completa.
+- **Prueba de actualización del 22/10/2026**: el refresco de disponibilidad sobre las fichas individuales devolvió **HTTP 403 (desafío de Cloudflare) en las 78 peticiones alcanzadas** y se abortó sin forzar el sitio; las cabeceras de navegador completo no lo eluden. Consecuencia: el estado verificable de disponibilidad sigue siendo el del snapshot del 18/10/2026 y no se puede reconfirmar online cuándo desapareció cada anuncio. Las 16 fichas ya marcadas como no disponibles sí se re-verificaron ese mismo día y siguen inaccesibles.
 
 ## 2. Cubisima (fuente estructurada complementaria)
 

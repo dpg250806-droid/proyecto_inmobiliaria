@@ -46,3 +46,38 @@ ni registra ejecuciones en línea que no se hayan realizado.
   total detectado y las páginas limitadas por `--max-pages`.
 - Suite: 74 pruebas correctas. No se ejecutó el rastreo completo ni se guardó
   ninguno de esos resultados temporales en `outputs/` o en los CSV originales.
+
+## 2026-10-22
+
+### 22:57:28 — Sensibilidad de las exclusiones de alquileres y no residenciales
+
+- Nuevo `sensibilidad_exclusiones.py`: reconstruye el escenario alternativo con los
+  16 anuncios retirados el 20/10 (9 alquileres y 7 no residenciales) a partir del
+  maestro previo `dataset_maestro_20261020_193305.csv` y compara medianas y
+  percentiles contra el maestro vigente. Es solo lectura: no modifica el maestro.
+- Resultado: ninguna mediana por fuente y moneda cambia (0,00 %) y ninguna mediana
+  municipal cambia; sólo el percentil 5 de Cubisima en CUC baja un 9 %
+  (5.000 → 4.550). Sólo 9 de los 16 aportarían precio analizable (8 alquileres de
+  250-750 CUC y un alquiler de 300 USD): la retirada afecta a la cola, no al centro.
+- Salidas: `outputs/auditoria/sensibilidad_retirados_*.{csv,md}`.
+
+### 23:06:15 — Contraste gráfico con fuentes externas
+
+- Nuevo `grafico_contraste_externo.py`: compara la mediana de Revolico en USD por
+  municipio con el promedio orientativo de CubanOSS Inmobiliaria (12/06/2025) en los
+  8 municipios con referencia, con bandas para los rangos que esa fuente publica.
+- Umbrales respetados: Cotorro excluido (n=2 < 5); las bandas de Centro Habana y
+  La Lisa se dibujan como banda, no como valor único; la fuente se etiqueta como
+  comercial y como promedio orientativo, no como transacción. Datos en
+  `outputs/visualizaciones/datos_contraste_fuentes_externas_*.csv`.
+
+### 23:11:24 — Refresco de disponibilidad de Revolico abortado por bloqueo
+
+- `python extraer_metadatos_revolico.py` devolvió HTTP 403 (desafío de Cloudflare)
+  en las 78 fichas alcanzadas; las cabeceras de navegador completo tampoco lo eluden.
+- Se detuvo el proceso a los 18 minutos para no seguir recargando el sitio y el CSV
+  parcial se movió a `outputs/auditoria/refresco_revolico_20261022_fallido_403.csv`
+  para que `integrar_fuentes.py` no lo aplique como snapshot válido.
+- Consecuencia: el estado de disponibilidad sigue siendo el del 18/10/2026. Las 16
+  fichas ya marcadas como no disponibles sí se re-verificaron y continúan inaccesibles.
+- Documentación sincronizada: README, `fuentes_datos.md` e informe preliminar.

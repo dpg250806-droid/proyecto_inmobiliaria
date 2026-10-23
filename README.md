@@ -40,13 +40,15 @@ El detalle de la formulación está en [`preguntas_investigacion.md`](preguntas_
 | Municipios homologados | 931 (solo los 15 de La Habana) |
 | Anuncios de Revolico inaccesibles | 153 (80 despublicados, 73 eliminados) |
 | Fichas excluidas del alcance | 50: 22 no residenciales/alquileres y 28 fuera de alcance (13 fuera de La Habana y 15 no vivienda) |
-| Fichas de alcance dudoso | 14, **incluidas** por decisión de la investigadora (venta de inmueble) y marcadas en `alcance_dudoso`; la sensibilidad debe regenerarse junto con las salidas analíticas |
+| Fichas de alcance dudoso | 14, **incluidas** por decisión de la investigadora (venta de inmueble) y marcadas en `alcance_dudoso`; la sensibilidad de retirarlas no mueve ninguna mediana (0,00 %) |
 | Revisión de precios < 1.000 | 23 anuncios revisados uno a uno: 9 alquileres retirados, 9 sin precio verificable, 4 despublicados, 1 reextraído (12.500 USD) |
 | Segunda pasada sobre los 134 sin precio | 15 precios recuperados del texto (12 USD, 4.500-600.000 USD, 125.000 EUR, 7.500 USD por convención de millares) y 7 anuncios retirados por no ser oferta de venta de vivienda |
+| Sensibilidad de las 50 exclusiones (22/10/2026) | Conservar los 9 alquileres y los 7 no residenciales **no mueve ninguna mediana** (0,00 %); solo baja el percentil 5 de Cubisima CUC un 9 % (5.000 → 4.550). Tabla en `outputs/auditoria/` |
+| Refresco de disponibilidad de Revolico (22/10/2026) | **No realizado**: HTTP 403 (Cloudflare) en las 78 fichas alcanzadas; se abortó sin forzar el sitio. El estado verificable sigue siendo el del snapshot del 18/10/2026 |
 | Tasas registradas | 20/10/2026 (USD 815 informal / 710,50 formal; EUR 910 / 796,26) |
 | Entrevistas codificadas | 10 (E01–E10, 15–19/10/2026) |
 | Pruebas automáticas | 74 en verde (`python -m unittest discover -s tests -t .`) |
-| Scrapers (prueba acotada) | Cubisima HTTP 200 (24 anuncios en 1 de 25 páginas); HogarEnCuba 13 fichas sin fallos (1 de 10 páginas); Revolico sigue HTTP 403 en línea y funciona en modo HTML local |
+| Scrapers (prueba acotada) | Cubisima HTTP 200 (24 anuncios en 1 de 25 páginas); HogarEnCuba 13 fichas sin fallos (1 de 10 páginas); Revolico HTTP 403 en línea también en las fichas individuales desde el 22/10: se trabaja con el HTML guardado |
 
 Detalle por pregunta, tabla y gráfico: `outputs/preguntas/preguntas_resueltas_*.md`.
 
@@ -159,8 +161,9 @@ python -m unittest discover -s tests -t .
 | `limpieza_integrada.py` | Deriva columnas de análisis sin sobrescribir los campos publicados |
 | `comparativo_fuentes.py` | Cobertura publicada vs. de análisis, comparativo por canal y sus gráficos |
 | `segmentacion_viviendas.py` | Segmentación por terciles de precio (33/66) y perfiles por tamaño |
-| `clustering_viviendas.py` | k-means (k=3) por moneda sobre precio, habitaciones y banos |
+| `clustering_viviendas.py` | k-means (k=3) por moneda sobre log(precio), habitaciones y banos, con reinicios y prueba de estabilidad |
 | `visualizaciones_fuentes.py` | 8 gráficos de síntesis y resumen tabular |
+| `grafico_contraste_externo.py` | Contraste gráfico de nuestras medianas por municipio frente al promedio orientativo de la fuente externa |
 | `analisis_preguntas.py` | Respuestas tabuladas a las 9 preguntas con notas de interpretación |
 | `procesar_entrevistas.py` | Anonimización y codificación (C1–C7) de las respuestas de la encuesta |
 
@@ -177,6 +180,7 @@ python -m unittest discover -s tests -t .
 | `revisar_precios_pendientes_texto.py` | Rastrea en el texto ya descargado los montos declarados en los anuncios sin precio |
 | `revisar_precios_bajos_1000.py` | Consulta la ficha individual de los anuncios con precio < 1.000 y extrae los montos del texto |
 | `auditar_alquileres.py` | Detecta alquileres y permutas publicados en los catálogos de venta |
+| `sensibilidad_exclusiones.py` | Comprueba el efecto de retirar alquileres y anuncios no residenciales sobre medianas y percentiles (solo lectura) |
 | `tests/` | Pruebas de precio/moneda, exclusiones de alcance y homologación de municipios |
 
 ## 6. Datos y artefactos
@@ -203,7 +207,7 @@ python -m unittest discover -s tests -t .
 | `alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión (20/10/2026), con motivo, evidencia, decisión y advertencia de interpretación |
 
 ### `outputs/` (resultados derivados, no versionados)
-`integracion/`, `limpieza_integrada/`, `conversiones/`, `comparativos/`, `segmentacion/`, `clustering/`, `visualizaciones/`, `entrevistas/`, `validacion/`, `preguntas/`, `historico/`. Las salidas nuevas llevan marca de tiempo y no reemplazan archivos existentes; las ejecuciones históricas se conservan.
+`integracion/`, `limpieza_integrada/`, `conversiones/`, `comparativos/`, `segmentacion/`, `clustering/`, `visualizaciones/`, `auditoria/`, `entrevistas/`, `validacion/`, `preguntas/`, `historico/`. Las salidas nuevas llevan marca de tiempo y no reemplazan archivos existentes; las ejecuciones históricas se conservan.
 
 ### `data/` (respaldos locales, no versionados)
 `raw/` con los CSV originales y `hash_inventario.csv`; `tasas/` con el registro de tasas; `entrevistas/` con la exportación original de la encuesta (contiene datos personales identificables: **nunca se versiona ni se publica**).

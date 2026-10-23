@@ -1,10 +1,10 @@
 # Informe preliminar del mercado inmobiliario de La Habana
 
-**Corte de datos:** 19/10/2026 · **Tasas:** 20/10/2026 · **Revisión del documento:** 20/10/2026
+**Corte de datos:** 19/10/2026 · **Tasas:** 20/10/2026 · **Revisión del documento:** 22/10/2026
 **Base integrada:** `outputs/integracion/dataset_maestro_20261020_234716.csv` — 1.516 anuncios (Revolico 748, Cubisima 585, HogarEnCuba 183), 0 identificadores duplicados y 0 URL repetidas.
-**Estado:** documento de resultados consolidado. No es todavía el informe final; el cierre académico (discusión, limitaciones y referencias) queda pendiente de autorización expresa.
+**Estado:** documento de resultados consolidado, base del informe final. La redacción académica (marco teórico, discusión y referencias) queda pendiente de autorización expresa.
 
-> **Advertencia técnica (21/10/2026):** este documento conserva tablas y cifras de una ejecución anterior. La auditoría verificó el maestro, pero no regeneró este reporte ni los outputs locales. Algunas tablas aún muestran monedas o grupos con muestras por debajo del umbral vigente y algunas cifras descriptivas quedaron desactualizadas. No citar estas tablas como resultados vigentes hasta regenerar y revisar las salidas; este archivo sigue siendo preliminar, no el informe final.
+> **Nota de estado (22/10/2026):** las tablas de resultados se contrastaron contra el maestro vigente y las figuras se regeneraron. El documento incorpora la prueba de sensibilidad a la retirada de alquileres y no residenciales (`outputs/auditoria/`) y el contraste gráfico con fuentes externas (`outputs/visualizaciones/08_contraste_fuentes_externas_*.png`). Sigue siendo un documento de trabajo, no el informe final.
 
 ---
 
@@ -24,6 +24,7 @@ La base se construyó en pasos documentados, sin modificar ningún archivo origi
 - La auditoría de las 28 exclusiones de alcance está en `revision_manual/exclusiones_alcance.csv` (URL exacta, motivo y evidencia); ninguna de esas URL aparece en el maestro.
 - Los **9 alquileres** y el resto de la revisión de precios raros están en `revision_manual/precios_bajos_1000.csv`; los **7 anuncios de objeto no vivienda** y los **15 precios recuperados** de la segunda pasada, en `revision_manual/precios_pendientes_recuperados.csv`. Todos llevan el fragmento de descripción que lo demuestra.
 - **14 anuncios de alcance dudoso se conservan** por decisión de la investigadora (20/10/2026: *todo lo que sea venta de inmueble es válido*): 6 fincas, 2 de uso mixto, 1 local adaptado a vivienda, 1 hostal, 1 casa-restaurante, 1 casa con bar, 1 almacén y 1 casa con finca. Quedan marcados en `alcance_dudoso` y listados en `revision_manual/alcance_dudoso.csv`. La **sensibilidad es nula**: al retirarlos, ninguna mediana por fuente y moneda se mueve (0,00 %; tabla 9b en `outputs/preguntas/`).
+- **Prueba de sensibilidad de las exclusiones (22/10/2026):** si se conservaran los 9 alquileres y los 7 anuncios no residenciales, ninguna mediana por fuente y moneda cambiaría (0,00 %). Solo el percentil 5 de Cubisima en CUC bajaría un 9 % (de 5.000 a 4.550), porque los alquileres retirados son rentas mensuales de 250-750 CUC. La retirada afecta a la cola de la distribución, no al centro. Tabla: `outputs/auditoria/sensibilidad_retirados_*.md`.
 - La unidad de análisis es **el anuncio**, no la transacción cerrada. Ningún precio se imputa: cuando un campo no existe, no se extrajo o requiere revisión manual, queda marcado con esa distinción (`precio_sospechoso`, `veredicto_revision`, `origen_precio`).
 
 ### 1.1 Auditoría de precios "raros" (umbral < 1.000)
@@ -77,7 +78,7 @@ Se revisaron uno a uno **23 anuncios** con precio de análisis inferior a 1.000 
 | Revolico | USD | 690 | 25.000 | 50.305 | 1.200 | 900.000 |
 | Revolico | EUR | 1 | 125.000 | 125.000 | 125.000 | 125.000 |
 
-La mediana es el centro robusto: las medias quedan muy por encima por la cola de anuncios caros (hasta 1,3 millones en HogarEnCuba). Solo USD es comparable entre fuentes; las filas con n<30 (EUR: n=1, n=2 y n=1) se muestran por trazabilidad y no se interpretan. **Las medianas no cambiaron respecto de la versión anterior a la auditoría de precios** (25.000 / 25.000 / 60.000): la limpieza de artefactos afectan a la cola, no al centro.
+La mediana es el centro robusto: las medias quedan muy por encima por la cola de anuncios caros (hasta 1,3 millones en HogarEnCuba). Solo USD es comparable entre fuentes; las filas con n<30 (EUR: n=1, n=2 y n=1; Cubisima USD: n=14) se muestran por trazabilidad y no se interpretan. **Las medianas no cambiaron respecto de la versión anterior a la auditoría de precios** (25.000 / 25.000 / 60.000): la limpieza de artefactos afecta a la cola, no al centro.
 
 ### 4.2 Variación entre municipios (pregunta secundaria 2)
 
@@ -206,6 +207,7 @@ El contraste con el registro publicado sobre el mercado habitacional habanero es
 - **Dirección coincidente.** AFP (24/04/2026) describe una reanimación del mercado en 2026 con precios al alza en Miramar, Nuevo Vedado y Vedado, y valores **40-50 % por debajo** del máximo del deshielo diplomático; los análisis comerciales (junio y octubre de 2025, septiembre de 2026) estiman caídas reales del **40-60 %** en cinco años y citan el éxodo de más de 1,5 millones de emigrados desde 2020 como causa de la sobreoferta. Las entrevistas del proyecto coinciden en el mecanismo (8 de 10 nombran la migración como factor dominante).
 - **Magnitud no verificable aquí.** El proyecto no puede medir esa caída: su muestra es transversal. Lo que sí muestra es que nuestros precios pedidos de octubre de 2026 son del mismo orden de magnitud que los "precios actuales" de esas fuentes, y que en los municipios periféricos nuestras medianas coinciden con sus promedios orientativos (San Miguel del Padrón 9.000 frente a 8.000; Guanabacoa 8.500 frente a 9.000; Centro Habana 15.000 dentro de su banda 12.000-40.000).
 - **Divergencia que el proyecto resuelve.** Una de esas fuentes afirma que "en zonas vulnerables se llegaron a vender casas por 100, 200, 600 dólares". La auditoría de precios <1.000 muestra que, en el catálogo de 2026, los anuncios en ese rango son **alquileres publicados en la sección de venta**, marcadores de precio o errores de lectura de separadores de millares. Es una advertencia metodológica: esas cifras no son contrastables y el proyecto las depura en lugar de reproducirlas.
+- **Contraste gráfico (22/10/2026).** La figura `08_contraste_fuentes_externas_*.png` compara la mediana de Revolico en USD con el promedio orientativo de CubanOSS en los ocho municipios con referencia. En los periféricos la brecha es pequeña (Guanabacoa −5,6 %; San Miguel del Padrón +12,5 %); en Habana Vieja nuestros precios pedidos quedan un 20 % por debajo y en Arroyo Naranjo un 43 % por encima; en Centro Habana y La Lisa caen dentro o en el borde inferior de la banda publicada; en Playa (50.000) la mediana queda entre Miramar (45.000) y Siboney (55.000). La comparación es de orden de magnitud: la referencia es un promedio comercial, no una transacción.
 - **Límite de fuente.** El organismo oficial de estadística (ONEI) no fue accesible desde el entorno de trabajo y no se consultó ningún índice oficial de precios de vivienda: no existe una serie pública que contrastar.
 
 ## 6. Triangulación con entrevistas anónimas
@@ -224,20 +226,21 @@ Base: 10 entrevistas (E01–E10; 15/10/2026 a 19/10/2026) procesadas con `proces
 ## 7. Limitaciones
 
 1. **Anuncios ≠ transacciones**: se observan precios pedidos, no precios pactados; no hay fecha de operación ni superficies verificadas.
-2. **Sin serie temporal**: 600 de 601 fechas útiles de Revolico son de agosto a octubre de 2026; no hay panel 2020-2026 y no se puede medir evolución de precios ni el efecto de la migración.
-3. **Sesgo de disponibilidad en Revolico**: 153 de 754 anuncios ya no son accesibles (80 despublicados, 73 eliminados). No se descartan: quedan marcados con `fecha_ultima_disponibilidad`, `ventana_despublicacion` y `justificacion_disponibilidad`; la desaparición solo puede acotarse al intervalo 29/09–18/10/2026.
+2. **Sin serie temporal**: 594 de las 595 fechas útiles de Revolico son de agosto a octubre de 2026 (la única excepción es de mayo de 2025); no hay panel 2020-2026 y no se puede medir evolución de precios ni el efecto de la migración.
+3. **Sesgo de disponibilidad en Revolico**: 153 de 748 anuncios ya no son accesibles (80 despublicados, 73 eliminados). No se descartan: quedan marcados con `fecha_ultima_disponibilidad`, `ventana_despublicacion` y `justificacion_disponibilidad`; la desaparición solo puede acotarse al intervalo 29/09–18/10/2026.
 4. **Cobertura parcial de habitaciones y banos**: el techo lo fija el texto del anuncio (153 inaccesibles y descripciones que omiten la cantidad). La cadena de decisión es descripción → título → campo publicado → enlace; 72 anuncios con cantidades discrepantes quedan marcados en `conflicto_detalle` sin resolverse. No se imputa nada.
-5. **Contaminación del catálogo de venta**: nueve anuncios eran alquileres y uno más era una permuta; se retiraron del maestro, pero no se puede descartar que queden casos similares con precios por encima de 1.000. La revisión de alquileres se hizo sobre las 594 fichas de Cubisima y las 754 de Revolico con el texto completo, por lo que la cobertura de esta limpieza es alta, pero no total.
+5. **Contaminación del catálogo de venta**: nueve anuncios eran alquileres, uno más era una permuta y siete no eran oferta de venta de vivienda; se retiraron del maestro, pero no se puede descartar que queden casos similares con precios por encima de 1.000. La revisión de alquileres se hizo sobre las 585 fichas de Cubisima y las 748 de Revolico con el texto completo, por lo que la cobertura de esta limpieza es alta, pero no total.
 6. **Precios sin verificar**: 112 anuncios (59 sin precio en texto, 22 no verificables, 11 que solo repiten el precio ya marcado, 8 no disponibles, 8 despublicados, 3 en CUP y 1 con valor improbable) quedan listados con motivo y acción sugerida; no se imputa ninguno. La revisión del 20/10/2026 recuperó 15 de los 134 anteriores y retiró 7 anuncios que no eran oferta de venta de vivienda; el resto son anuncios cuyo vendedor nunca publicó un precio.
 7. **Municipios y zonas no son equivalentes**: solo 931 fichas tienen municipio homologado (Revolico 650, HogarEnCuba 183, Cubisima 98, y en Cubisima el nombre de la zona coincide con un municipio, no con una municipalización). Las zonas de Cubisima se analizan aparte.
 8. **Superficie (m²) excluida**: 0 % en Revolico y Cubisima, 9/183 (4,9 %) en HogarEnCuba.
 9. **Precios en CUP (3) y EUR (4) no interpretables**: los CUP quedan como sospechosos y los EUR se conservan por literalidad de la descripción, en conflicto con el JSON-LD de HogarEnCuba.
 10. **CUC convertido por paridad nominal**: no existe tasa de mercado registrada; la conversión 1:1 es una convención declarada y el bloque en CUC puede estar inflado respecto del mercado en USD.
 11. **Tasas de referencia, no operadas**: registro del 20/10/2026 leído a mano de ElToque por bloqueo (HTTP 403), con variación intradía del euro. Toda cifra convertida cita esa fecha y esa fuente.
-12. **Agrupamiento descriptivo**: k-means con k=3 y log(precio) es estable en 5 semillas, pero sigue siendo una partición de los datos disponibles, no una tipología de la vivienda; el grupo "alto" en USD tiene 32 anuncios.
+12. **Agrupamiento descriptivo**: k-means con k=3 y log(precio) es estable en 5 semillas, pero sigue siendo una partición de los datos disponibles, no una tipología de la vivienda; el grupo "alto" en USD tiene 33 anuncios.
 13. **Fuentes externas con intereses**: cuatro de las siete fuentes contrastadas son blogs de una agencia inmobiliaria con interés comercial; se citan como comentario de mercado y no como medición.
 14. **Sin scraping de Revolico ni de redes sociales**: se usa HTML guardado; Facebook y Telegram solo han aportado evidencia manual y la encuesta anónima.
 15. **Muestra de entrevistas no probabilística**: describe mecanismos y percepciones; no estima prevalencias ni efectos.
+16. **Refresco de disponibilidad no realizado (22/10/2026)**: el intento de reconsultar las fichas de Revolico devolvió HTTP 403 (desafío de Cloudflare) en las 78 peticiones alcanzadas y se abortó sin forzar el sitio. El estado de disponibilidad sigue siendo el del snapshot del 18/10/2026. Solo se re-verificaron los 16 anuncios ya marcados como no disponibles: los 16 continúan inaccesibles.
 
 ## 8. Entregables del proyecto
 
@@ -249,7 +252,8 @@ Base: 10 entrevistas (E01–E10; 15/10/2026 a 19/10/2026) procesadas con `proces
 | `outputs/comparativos/` | Cobertura por fuente, comparativo por canal y sus gráficos |
 | `outputs/segmentacion/` | Segmentación por terciles (33/66) y perfiles por tamaño |
 | `outputs/clustering/` | k-means por moneda, centroides, prueba de estabilidad y dispersión de grupos |
-| `outputs/visualizaciones/` | 8 gráficos de síntesis y resumen tabular |
+| `outputs/visualizaciones/` | 9 gráficos de síntesis, incluido el contraste con fuentes externas, y resumen tabular |
+| `outputs/auditoria/` | Pruebas de sensibilidad (alcance dudoso y retirada de alquileres y no residenciales) y registro del refresco bloqueado del 22/10 |
 | `outputs/entrevistas/` | Entrevistas codificadas (E01–E10) y resumen con citas literales |
 | `outputs/validacion/` | Revisión de precios, lista de pendientes y evidencias de revisión |
 | `outputs/preguntas/` | Respuestas a las 9 preguntas con tablas, sensibilidad y notas de interpretación |
@@ -263,4 +267,5 @@ Reproducibilidad: `python cifras_control.py` imprime todas las cifras de control
 
 1. ~~Tasas verificadas~~ — **resuelto el 20/10/2026**: registro actualizado (USD 815 / 710,50; EUR 910 / 796,26) y conversiones, gráfico de tasas y respuestas regeneradas.
 2. **Revisión de los 112 precios pendientes** (lista con motivo y acción sugerida en `outputs/validacion/precios_pendientes_actualizado_*.csv`): decidir caso por caso sin imputar. En su mayoría el vendedor nunca publicó un precio, así que el trabajo pendiente es de delimitación del análisis, no de recuperación de datos.
-3. **Informe final**: redacción académica con discusión, limitaciones y referencias, pendiente de autorización expresa del usuario.
+3. **Refresco de disponibilidad de Revolico** — **bloqueado el 22/10/2026**: el sitio devuelve HTTP 403 (desafío de Cloudflare) en las fichas individuales, por lo que el estado verificable es el del snapshot del 18/10/2026. Reintentar solo si el acceso se restablece, sin forzar el sitio.
+4. **Informe final**: redacción académica con marco teórico, discusión, limitaciones y referencias, pendiente de autorización expresa del usuario.
