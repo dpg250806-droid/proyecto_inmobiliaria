@@ -11,6 +11,7 @@ Reglas de las graficas:
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 import matplotlib
 matplotlib.use("Agg")
@@ -21,11 +22,11 @@ import pandas as pd
 import seaborn as sns
 
 from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
+from salidas import nueva_ruta_salida
 
 ROOT = Path(__file__).resolve().parent
 MASTER_GLOB = "outputs/integracion/dataset_maestro_*.csv"
 OUT = ROOT / "outputs" / "visualizaciones"
-OUT.mkdir(parents=True, exist_ok=True)
 sns.set_theme(style="whitegrid", palette="deep")
 plt.rcParams["figure.dpi"] = 130
 plt.rcParams["savefig.bbox"] = "tight"
@@ -51,8 +52,8 @@ def money_labels(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-def save(fig, name: str) -> Path:
-    path = OUT / name
+def save(fig, name: str, stamp: str | None = None) -> Path:
+    path = nueva_ruta_salida(OUT, name, stamp)
     fig.savefig(path, dpi=140, facecolor="white")
     plt.close(fig)
     return path
@@ -65,12 +66,17 @@ def _currency_counts(frame: pd.DataFrame) -> pd.Series:
     )
 
 
-def plot_price_distribution(frame: pd.DataFrame):
+def plot_price_distribution(frame: pd.DataFrame, stamp: str | None = None):
     subset = frame[
         frame["precio_analisis"].notna()
         & frame["precio_analisis"].gt(0)
         & frame["moneda_analisis"].ne("")
     ].copy()
+    if subset.empty:
+        return None
+    counts = subset.groupby("moneda_analisis").size()
+    excluidas = {currency: int(count) for currency, count in counts.items() if count < 5}
+    subset = subset[subset["moneda_analisis"].isin(counts[counts >= 5].index)].copy()
     if subset.empty:
         return None
     pares = subset.groupby(["moneda_analisis", "fuente"]).size()
@@ -81,8 +87,7 @@ def plot_price_distribution(frame: pd.DataFrame):
     if subset.empty:
         return None
     counts = subset["moneda_analisis"].value_counts()
-    currencies = [currency for currency in ["CUC", "USD", "EUR", "CUP"] if counts.get(currency, 0) >= 5]
-    excluidas = {currency: int(counts[currency]) for currency in counts.index if counts[currency] < 5}
+    currencies = [currency for currency in ["CUC", "USD", "EUR", "CUP"] if currency in counts.index]
     if not currencies:
         return None
     fig, axes = plt.subplots(len(currencies), 1, figsize=(10, 3.5 * len(currencies)), sharex=False)
@@ -133,10 +138,21 @@ def plot_price_distribution(frame: pd.DataFrame):
         y=1.01,
     )
     fig.tight_layout()
-    return save(fig, "01_distribucion_precios_por_moneda.png")
+    return save(fig, "01_distribucion_precios_por_moneda.png", stamp)
 
 
-def plot_municipality_median(frame: pd.DataFrame):
+def filtrar_municipios_por_fuente(frame: pd.DataFrame, minimo: int = 5):
+    """Keep municipality/source groups with enough observations."""
+    counts = frame.groupby(["municipio_homologado", "fuente"]).size()
+    excluded = counts[counts < minimo]
+    keep = counts[counts >= minimo].index
+    filtered = frame[
+        frame.set_index(["municipio_homologado", "fuente"]).index.isin(keep)
+    ].copy()
+    return filtered, excluded
+
+
+def plot_municipality_median(frame: pd.DataFrame, stamp: str | None = None):
     required = {"precio_analisis", "moneda_analisis", "ubicacion_analisis"}
     if not required.issubset(frame.columns):
         return None
@@ -150,11 +166,20 @@ def plot_municipality_median(frame: pd.DataFrame):
     subset["municipio_homologado"] = subset["municipio_homologado"].fillna("").astype(str).str.strip()
     subset["ubicacion_analisis"] = subset["ubicacion_analisis"].fillna("").astype(str).str.strip()
 
-    usd = subset[
+    usd_source_candidates = subset[
         subset["moneda_analisis"].eq("USD")
-        & subset["municipio_homologado"].ne("")
-        & subset["fuente"].isin(["Revolico", "HogarEnCuba"])
+        & subset["fuente"].isin(["Revolico", "HogarEnCuba", "Cubisima"])
     ]
+    usd_pair_counts = usd_source_candidates.groupby(["moneda_analisis", "fuente"]).size()
+    pares_usd_excluidos = usd_pair_counts[usd_pair_counts < 10]
+    pares_usd_validos = usd_pair_counts[usd_pair_counts >= 10].index
+    usd = usd_source_candidates[
+        usd_source_candidates.set_index(["moneda_analisis", "fuente"]).index.isin(
+            pares_usd_validos
+        )
+        & usd_source_candidates["municipio_homologado"].ne("")
+    ]
+    usd, grupos_usd_excluidos = filtrar_municipios_por_fuente(usd)
     cuc = subset[
         subset["fuente"].eq("Cubisima")
         & subset["moneda_analisis"].eq("CUC")
@@ -164,10 +189,6 @@ def plot_municipality_median(frame: pd.DataFrame):
     fig, axes = plt.subplots(1, 2, figsize=(14, 6.2), gridspec_kw={"width_ratios": [1.15, 1]})
     ax_izq, ax_der = axes
 
-    if not usd.empty:
-        total = usd.groupby("municipio_homologado").size()
-        keep = total[total >= 10].index
-        usd = usd[usd["municipio_homologado"].isin(keep)]
     if not usd.empty:
         med = usd.groupby(["municipio_homologado", "fuente"])["precio_analisis"].median().unstack()
         n_total = usd.groupby("municipio_homologado").size()
@@ -192,16 +213,15 @@ def plot_municipality_median(frame: pd.DataFrame):
         ax_izq.set_yticks(y)
         ax_izq.set_yticklabels([f"{m} (n={int(n_total[m])})" for m in med.index], fontsize=8.5)
         ax_izq.set_xlabel("Precio mediano (USD)")
-        ax_izq.set_title("USD: municipios de La Habana (Revolico y HogarEnCuba; n>=10)")
+        ax_izq.set_title("USD: municipios de La Habana (n>=5 por fuente)")
         ax_izq.legend(title="Fuente", fontsize=8, loc="lower right")
     else:
-        ax_izq.text(0.5, 0.5, "Sin municipios USD con n>=10", ha="center", va="center", transform=ax_izq.transAxes)
+        ax_izq.text(0.5, 0.5, "Sin municipios USD con n>=5", ha="center", va="center", transform=ax_izq.transAxes)
         ax_izq.set_axis_off()
 
-    if not cuc.empty:
-        total = cuc.groupby("ubicacion_analisis").size()
-        keep = total[total >= 10].index
-        cuc = cuc[cuc["ubicacion_analisis"].isin(keep)]
+    zonas_cuc = cuc.groupby("ubicacion_analisis").size()
+    zonas_cuc_excluidas = zonas_cuc[zonas_cuc < 5]
+    cuc = cuc[cuc["ubicacion_analisis"].isin(zonas_cuc[zonas_cuc >= 5].index)]
     if not cuc.empty:
         med_z = cuc.groupby("ubicacion_analisis")["precio_analisis"].agg(["median", "count"]).sort_values("median")
         y = np.arange(len(med_z))
@@ -210,9 +230,9 @@ def plot_municipality_median(frame: pd.DataFrame):
         ax_der.set_yticks(y)
         ax_der.set_yticklabels([f"{z} (n={int(n)})" for z, n in zip(med_z.index, med_z["count"])], fontsize=8.5)
         ax_der.set_xlabel("Precio mediano (CUC)")
-        ax_der.set_title("CUC: zonas/barrios de Cubisima (n>=10)")
+        ax_der.set_title("CUC: zonas/barrios de Cubisima (n>=5)")
     else:
-        ax_der.text(0.5, 0.5, "Sin zonas CUC con n>=10", ha="center", va="center", transform=ax_der.transAxes)
+        ax_der.text(0.5, 0.5, "Sin zonas CUC con n>=5", ha="center", va="center", transform=ax_der.transAxes)
         ax_der.set_axis_off()
 
     fig.suptitle(
@@ -222,16 +242,37 @@ def plot_municipality_median(frame: pd.DataFrame):
     fig.text(
         0.01,
         0.005,
-        "Cubisima USD (n=8) no se incluye en el panel municipal; sus zonas se muestran en el panel CUC. "
-        "Los municipios se homologan a los 15 de La Habana; las zonas conservan la etiqueta de Cubisima.",
+        "Municipios homologados y zonas se muestran en paneles separados. "
+        "Se excluyen los grupos de municipio/fuente y zona CUC con n<5; "
+        "los municipios se homologan a los 15 de La Habana.",
         fontsize=7.5,
         va="bottom",
     )
+    excluidas = []
+    if not grupos_usd_excluidos.empty:
+        excluidas.append(
+            "municipio/fuente n<5: "
+            + ", ".join(f"{m}/{f} ({n})" for (m, f), n in grupos_usd_excluidos.items())
+        )
+    if not pares_usd_excluidos.empty:
+        excluidas.append(
+            "fuente-moneda n<10: "
+            + ", ".join(
+                f"{m}/{f} ({n})" for (m, f), n in pares_usd_excluidos.items()
+            )
+        )
+    if not zonas_cuc_excluidas.empty:
+        excluidas.append(
+            "zona CUC n<5: "
+            + ", ".join(f"{zona} ({n})" for zona, n in zonas_cuc_excluidas.items())
+        )
+    if excluidas:
+        fig.text(0.01, 0.035, "Excluidos: " + " | ".join(excluidas), fontsize=6.8, va="bottom")
     fig.tight_layout(rect=[0, 0.04, 1, 1])
-    return save(fig, "02_mediana_precio_por_municipio.png")
+    return save(fig, "02_mediana_precio_por_municipio.png", stamp)
 
 
-def plot_rooms_price(frame: pd.DataFrame):
+def plot_rooms_price(frame: pd.DataFrame, stamp: str | None = None):
     subset = frame[
         frame["habitaciones_analisis"].notna()
         & frame["precio_analisis"].notna()
@@ -256,10 +297,16 @@ def plot_rooms_price(frame: pd.DataFrame):
         "8+",
         subset["habitaciones_analisis"].astype(int).astype(str),
     )
-    conteo_rooms = subset.groupby(["moneda_analisis", "habitaciones_grupo"]).size()
+    conteo_rooms = subset.groupby(
+        ["moneda_analisis", "fuente", "habitaciones_grupo"]
+    ).size()
     excluidas_rooms = conteo_rooms[conteo_rooms < 5]
     keep_rooms = conteo_rooms[conteo_rooms >= 5].index
-    subset = subset[subset.set_index(["moneda_analisis", "habitaciones_grupo"]).index.isin(keep_rooms)].copy()
+    subset = subset[
+        subset.set_index(
+            ["moneda_analisis", "fuente", "habitaciones_grupo"]
+        ).index.isin(keep_rooms)
+    ].copy()
     if subset.empty:
         return None
     presentes = set(subset["habitaciones_grupo"].unique())
@@ -291,17 +338,24 @@ def plot_rooms_price(frame: pd.DataFrame):
     if not excluidas_pares.empty:
         notas.append("fuente-moneda n<10: " + ", ".join(f"{m}/{f} ({n})" for (m, f), n in excluidas_pares.items()))
     if not excluidas_rooms.empty:
-        notas.append("habitaciones n<5: " + ", ".join(f"{m}/{h} ({n})" for (m, h), n in excluidas_rooms.items()))
+        notas.append(
+            "habitaciones n<5: "
+            + ", ".join(
+                f"{moneda}/{fuente}/{habitaciones} ({n})"
+                for (moneda, fuente, habitaciones), n in excluidas_rooms.items()
+            )
+        )
     g.fig.suptitle("Precio por habitaciones (mejor dato disponible)", y=1.03)
     if notas:
         g.fig.text(0.5, 0.005, "Sin gráfico: " + " | ".join(notas), ha="center", va="bottom", fontsize=7.2)
     g.fig.subplots_adjust(top=0.85, bottom=0.16)
-    g.fig.savefig(OUT / "03_habitaciones_precio_por_moneda.png", dpi=140, facecolor="white")
+    path = nueva_ruta_salida(OUT, "03_habitaciones_precio_por_moneda.png", stamp)
+    g.fig.savefig(path, dpi=140, facecolor="white")
     plt.close(g.fig)
-    return OUT / "03_habitaciones_precio_por_moneda.png"
+    return path
 
 
-def plot_feature_frequency(frame: pd.DataFrame):
+def plot_feature_frequency(frame: pd.DataFrame, stamp: str | None = None):
     cub = frame[frame["fuente"].eq("Cubisima")]
     if cub.empty:
         return None
@@ -335,10 +389,10 @@ def plot_feature_frequency(frame: pd.DataFrame):
     ax.set_title(f"Características declaradas en Cubisima (n={len(cub)}; ausente = no declarado)")
     ax.set_xlim(0, max(values) * 1.15 if values else 1)
     fig.tight_layout()
-    return save(fig, "04_frecuencia_caracteristicas_cubisima.png")
+    return save(fig, "04_frecuencia_caracteristicas_cubisima.png", stamp)
 
 
-def plot_metadata_quality(frame: pd.DataFrame):
+def plot_metadata_quality(frame: pd.DataFrame, stamp: str | None = None):
     fields = ["ubicacion_raw", "habitaciones", "banos", "precio_original", "moneda", "fecha_publicacion"]
     labels = {
         "ubicacion_raw": "Ubicación",
@@ -369,10 +423,10 @@ def plot_metadata_quality(frame: pd.DataFrame):
     ax.legend(title="Fuente", loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=3, frameon=False)
     fig.tight_layout()
     fig.subplots_adjust(bottom=0.28)
-    return save(fig, "05_calidad_metadatos_fuentes.png")
+    return save(fig, "05_calidad_metadatos_fuentes.png", stamp)
 
 
-def plot_analysis_coverage(frame: pd.DataFrame):
+def plot_analysis_coverage(frame: pd.DataFrame, stamp: str | None = None):
     fields = [
         ("precio_analisis", "Precio análisis"),
         ("ubicacion_analisis", "Ubicación análisis"),
@@ -408,10 +462,10 @@ def plot_analysis_coverage(frame: pd.DataFrame):
     ax.legend(title="Fuente", loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=3, frameon=False)
     fig.tight_layout()
     fig.subplots_adjust(bottom=0.28)
-    return save(fig, "05b_cobertura_analisis_fuentes.png")
+    return save(fig, "05b_cobertura_analisis_fuentes.png", stamp)
 
 
-def plot_exchange_rates():
+def plot_exchange_rates(stamp: str | None = None):
     folder = ROOT / "data" / "tasas"
     rate_files = sorted(folder.glob("tasas_cambio_*.csv")) if folder.exists() else []
     if not rate_files:
@@ -452,7 +506,7 @@ def plot_exchange_rates():
         va="bottom",
     )
     fig.tight_layout(rect=[0, 0.1, 1, 1])
-    return save(fig, "06_tasas_usd_eur_cup.png"), rate_files[-1], fecha_txt
+    return save(fig, "06_tasas_usd_eur_cup.png", stamp), rate_files[-1], fecha_txt
 
 
 def _latest_count(prefix: str) -> int:
@@ -475,7 +529,12 @@ def _interview_count() -> int:
         return 0
 
 
-def plot_schema(frame: pd.DataFrame, rate_file: Path | None = None, fecha_tasas: str | None = None):
+def plot_schema(
+    frame: pd.DataFrame,
+    rate_file: Path | None = None,
+    fecha_tasas: str | None = None,
+    stamp: str | None = None,
+):
     fig, ax = plt.subplots(figsize=(13, 8.2))
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
@@ -551,9 +610,9 @@ def plot_schema(frame: pd.DataFrame, rate_file: Path | None = None, fecha_tasas:
     caja(52, 33, 46, 17,
          "Q1-Q5: precios, municipios, habitaciones,\n"
          "       características y canales\n"
-         "Q6: conversión USD/EUR (tasas) y CUC nominal 1:1\n"
-         "Q7: terciles y k-means por moneda\n"
-         f"Q8: entrevistas anónimas E01-E10 (n={entrevistas})\n"
+         "Q6: agrupación de viviendas\n"
+         "Q7: conversión USD/EUR y CUC nominal 1:1\n"
+         f"Q8: migración y entrevistas anónimas (n={entrevistas})\n"
          "Q9: límites y cobertura",
          "#d9eaf7", titulo="Análisis (preguntas 1-9)")
 
@@ -587,10 +646,10 @@ def plot_schema(frame: pd.DataFrame, rate_file: Path | None = None, fecha_tasas:
     flecha(24, 33, 24, 28.5)
     flecha(74, 33, 74, 28.5)
     ax.set_title("Esquema del proyecto: fuentes, integración, análisis y límites", fontsize=13, weight="bold")
-    return save(fig, "07_esquema_integracion.png")
+    return save(fig, "07_esquema_integracion.png", stamp)
 
 
-def write_summary(frame: pd.DataFrame, paths: dict):
+def write_summary(frame: pd.DataFrame, paths: dict, stamp: str | None = None):
     lines = []
     lines.append("# Resumen visual y tabular de fuentes")
     lines.append("")
@@ -614,6 +673,15 @@ def write_summary(frame: pd.DataFrame, paths: dict):
     lines.append("")
     lines.append("## Precio central por fuente y moneda")
     usable = frame[frame["precio_analisis"].notna() & frame["moneda_analisis"].ne("")]
+    currency_counts = usable.groupby("moneda_analisis").size()
+    excluded_currencies = currency_counts[currency_counts < 5]
+    usable = usable[usable["moneda_analisis"].isin(currency_counts[currency_counts >= 5].index)]
+    pair_counts = usable.groupby(["moneda_analisis", "fuente"]).size()
+    excluded_pairs = pair_counts[pair_counts < 10]
+    eligible_pairs = pair_counts[pair_counts >= 10].index
+    usable = usable[
+        usable.set_index(["moneda_analisis", "fuente"]).index.isin(eligible_pairs)
+    ].copy()
     stats = usable.groupby(["fuente", "moneda_analisis"])["precio_analisis"].agg(
         ["count", "median", "mean", "min", "max"]
     ).reset_index()
@@ -627,6 +695,31 @@ def write_summary(frame: pd.DataFrame, paths: dict):
         }
     )
     lines.append(stats.to_markdown(index=False))
+    exclusions = []
+    if not excluded_currencies.empty:
+        exclusions.append(
+            "moneda n<5: "
+            + ", ".join(
+                f"{currency} ({count})"
+                for currency, count in excluded_currencies.items()
+            )
+        )
+    if not excluded_pairs.empty:
+        exclusions.append(
+            "fuente-moneda n<10: "
+            + ", ".join(
+                f"{currency}/{source} ({count})"
+                for (currency, source), count in excluded_pairs.items()
+            )
+        )
+    lines.append(
+        "Umbrales aplicados: monedas n>=5 y pares fuente-moneda n>=10. "
+        + (
+            "Excluidos: " + "; ".join(exclusions) + "."
+            if exclusions
+            else "Sin exclusiones por tamaño."
+        )
+    )
     lines.append("")
     lines.append("## Habitaciones y precio en Cubisima")
     cub = usable[usable["fuente"].eq("Cubisima") & usable["habitaciones_analisis"].notna()]
@@ -646,10 +739,22 @@ def write_summary(frame: pd.DataFrame, paths: dict):
                 }
             )
         )
+        excluded_room_groups = hab_stats[hab_stats["anuncios"] < 5]
+        hab_stats = hab_stats[hab_stats["anuncios"] >= 5]
         lines.append(hab_stats.to_markdown(index=False))
         lines.append(
-            "\nLas celdas con n<5 se muestran para trazabilidad, pero no se interpretan. "
-            "La categoria 8+ agrupa 8 habitaciones o mas, incluido el valor 10.5."
+            "\nSe excluyen las celdas con n<5; "
+            + (
+                "grupos omitidos: "
+                + ", ".join(
+                    f"{row.moneda}/{row.habitaciones} ({row.anuncios})"
+                    for row in excluded_room_groups.itertuples()
+                )
+                + ". "
+                if not excluded_room_groups.empty
+                else "No hubo grupos omitidos. "
+            )
+            + "La categoria 8+ agrupa 8 habitaciones o mas, incluido el valor 10.5."
         )
     else:
         lines.append("Sin datos suficientes.")
@@ -684,26 +789,50 @@ def write_summary(frame: pd.DataFrame, paths: dict):
         "sospechosos; el campo publicado se conserva sin corregir para auditoría. No se comparan "
         "directamente importes de monedas distintas."
     )
+    currency_counts = usable.groupby("moneda_analisis").size()
+    excluded_currencies = currency_counts[currency_counts < 5]
+    pair_counts = usable.groupby(["moneda_analisis", "fuente"]).size()
+    excluded_pairs = pair_counts[pair_counts < 10]
+    exclusions = []
+    if not excluded_currencies.empty:
+        exclusions.append(
+            "moneda n<5: "
+            + ", ".join(f"{currency} ({count})" for currency, count in excluded_currencies.items())
+        )
+    if not excluded_pairs.empty:
+        exclusions.append(
+            "fuente-moneda n<10: "
+            + ", ".join(
+                f"{currency}/{source} ({count})"
+                for (currency, source), count in excluded_pairs.items()
+            )
+        )
     lines.append(
-        "Las monedas con menos de 5 anuncios no se grafican (EUR: 3 anuncios; se conserva en las "
-        "tablas). Tampoco se grafican las combinaciones fuente-moneda con menos de 10 anuncios "
-        "(USD de Cubisima: 8), para no presentar histogramas inestables como si fueran comparables. "
-        "Las dos fichas EUR de HogarEnCuba se mantienen como EUR porque la descripción del vendedor "
-        "dice literalmente EUR, aunque el título y el JSON-LD digan USD; la ficha EUR de Cubisima "
-        "también es explícita en el texto. El conflicto queda documentado en el diccionario de datos."
+        "Para los gráficos se omiten las monedas con n<5 y las combinaciones fuente-moneda "
+        "con n<10; las exclusiones se anotan en cada figura. "
+        + ("Exclusiones observadas: " + "; ".join(exclusions) + "." if exclusions else "No hubo exclusiones por tamaño.")
+    )
+    lines.append(
+        "Las fichas EUR de HogarEnCuba se conservan como EUR porque la descripción del vendedor "
+        "lo declara literalmente, aunque el título o JSON-LD indiquen USD; Cubisima y Revolico "
+        "también aportan declaraciones explícitas. El conflicto queda documentado en el diccionario."
     )
     lines.append(
         "Municipios y zonas se muestran por separado: `municipio_homologado` solo contiene los 15 "
         "municipios de La Habana; las zonas o barrios de Cubisima no se imputan como municipios. "
-        "El maestro tiene 1,532 anuncios: se excluyeron 6 fichas que no eran vivienda en venta y "
-        "28 fuera de alcance (otras provincias o inmuebles no residenciales/cuartos)."
+        f"El maestro vigente tiene {len(frame):,} anuncios. La integración registra "
+        f"{_latest_count('anuncios_no_residenciales')} anuncios no residenciales/alquileres y "
+        f"{_latest_count('anuncios_fuera_de_alcance')} fuera de alcance; consulta los CSV fechados "
+        "de `outputs/integracion/` para la composición exacta y la auditoría."
     )
-    path = OUT / "visualizaciones_resumen.md"
+    path = nueva_ruta_salida(OUT, "visualizaciones_resumen.md", stamp)
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
 
 def main():
+    OUT.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     frame = pd.read_csv(newest_master(), dtype=str)
     for col in ["precio_original", "habitaciones", "banos"]:
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
@@ -727,16 +856,16 @@ def main():
     frame = money_labels(frame)
 
     paths = {}
-    paths["distribucion"] = plot_price_distribution(frame)
-    paths["municipio"] = plot_municipality_median(frame)
-    paths["habitaciones"] = plot_rooms_price(frame)
-    paths["caracteristicas"] = plot_feature_frequency(frame)
-    paths["calidad"] = plot_metadata_quality(frame)
-    paths["calidad_analisis"] = plot_analysis_coverage(frame)
-    tasa_path, rate_file, fecha_tasas = plot_exchange_rates()
+    paths["distribucion"] = plot_price_distribution(frame, stamp)
+    paths["municipio"] = plot_municipality_median(frame, stamp)
+    paths["habitaciones"] = plot_rooms_price(frame, stamp)
+    paths["caracteristicas"] = plot_feature_frequency(frame, stamp)
+    paths["calidad"] = plot_metadata_quality(frame, stamp)
+    paths["calidad_analisis"] = plot_analysis_coverage(frame, stamp)
+    tasa_path, rate_file, fecha_tasas = plot_exchange_rates(stamp)
     paths["tasas"] = tasa_path
-    paths["esquema"] = plot_schema(frame, rate_file, fecha_tasas)
-    summary = write_summary(frame, paths)
+    paths["esquema"] = plot_schema(frame, rate_file, fecha_tasas, stamp)
+    summary = write_summary(frame, paths, stamp)
     if rate_file:
         print(f"Tasa reciente usada como fuente: {rate_file}")
     print(f"Resumen escrito en: {summary}")

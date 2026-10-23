@@ -13,6 +13,7 @@ import pandas as pd
 import seaborn as sns
 
 from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
+from salidas import nueva_ruta_salida
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -109,11 +110,19 @@ def analysis_coverage_table(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
+def channel_summary(frame: pd.DataFrame, min_currency: int = 5, min_pair: int = 10) -> pd.DataFrame:
     rows = []
     usable = frame[
         frame["precio_analisis"].notna()
         & frame["moneda_analisis"].ne("")
+    ]
+    currency_counts = usable.groupby("moneda_analisis").size()
+    currencies = currency_counts[currency_counts >= min_currency].index
+    usable = usable[usable["moneda_analisis"].isin(currencies)]
+    pair_counts = usable.groupby(["moneda_analisis", "canal_grafico"]).size()
+    pairs = pair_counts[pair_counts >= min_pair].index
+    usable = usable[
+        usable.set_index(["moneda_analisis", "canal_grafico"]).index.isin(pairs)
     ]
     for (canal, currency), g in usable.groupby(["canal_grafico", "moneda_analisis"]):
         fecha_publicada = g["fecha_publicacion"].fillna("").astype(str).str.strip().ne("")
@@ -132,7 +141,7 @@ def channel_summary(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def plot_coverage(summary: pd.DataFrame):
+def plot_coverage(summary: pd.DataFrame, stamp: str | None = None):
     metrics = ["ubicacion_pct", "habitaciones_pct", "banos_pct", "precio_pct", "moneda_pct", "fecha_pct"]
     long = summary.melt(id_vars="fuente", value_vars=metrics, var_name="variable", value_name="cobertura_pct")
     long["variable"] = long["variable"].str.replace("_pct", "", regex=False)
@@ -154,11 +163,11 @@ def plot_coverage(summary: pd.DataFrame):
     plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
     ax.legend(title="Fuente", loc="upper center", bbox_to_anchor=(0.5, -0.24), ncol=3, frameon=False)
     fig.tight_layout()
-    fig.savefig(OUT / "01_cobertura_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight")
+    fig.savefig(nueva_ruta_salida(OUT, "01_cobertura_por_fuente.png", stamp), dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_analysis_coverage(coverage: pd.DataFrame):
+def plot_analysis_coverage(coverage: pd.DataFrame, stamp: str | None = None):
     metrics = [
         "precio_analisis_pct",
         "ubicacion_analisis_pct",
@@ -187,11 +196,11 @@ def plot_analysis_coverage(coverage: pd.DataFrame):
     plt.setp(ax.get_xticklabels(), rotation=20, ha="right")
     ax.legend(title="Fuente", loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, frameon=False)
     fig.tight_layout()
-    fig.savefig(OUT / "01b_cobertura_analisis_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight")
+    fig.savefig(nueva_ruta_salida(OUT, "01b_cobertura_analisis_por_fuente.png", stamp), dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_channel_price(frame: pd.DataFrame):
+def plot_channel_price(frame: pd.DataFrame, stamp: str | None = None):
     valid = frame[frame["precio_analisis"].notna() & frame["moneda_analisis"].ne("")].copy()
     if valid.empty:
         return
@@ -239,11 +248,11 @@ def plot_channel_price(frame: pd.DataFrame):
     if notas:
         fig.text(0.5, -0.02, "Sin gráfico: " + " | ".join(notas), ha="center", va="top", fontsize=8)
     fig.tight_layout()
-    fig.savefig(OUT / "02_precio_por_canal.png", dpi=140, facecolor="white", bbox_inches="tight")
+    fig.savefig(nueva_ruta_salida(OUT, "02_precio_por_canal.png", stamp), dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_channel_rooms(frame: pd.DataFrame):
+def plot_channel_rooms(frame: pd.DataFrame, stamp: str | None = None):
     channel = frame.groupby("canal_grafico").agg(
         con_habitaciones_pct=("habitaciones_analisis", lambda s: round(100 * s.notna().mean(), 1))
     ).reset_index()
@@ -259,11 +268,11 @@ def plot_channel_rooms(frame: pd.DataFrame):
     ax.set_ylim(0, 108)
     plt.setp(ax.get_xticklabels(), rotation=12, ha="right")
     plt.tight_layout()
-    fig.savefig(OUT / "03_cobertura_habitaciones_por_canal.png", dpi=140, facecolor="white", bbox_inches="tight")
+    fig.savefig(nueva_ruta_salida(OUT, "03_cobertura_habitaciones_por_canal.png", stamp), dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_currency_percentage(frame: pd.DataFrame):
+def plot_currency_percentage(frame: pd.DataFrame, stamp: str | None = None):
     work = frame.copy()
     work["moneda"] = work["moneda"].replace("", "sin dato")
     counts = work.groupby(["fuente", "moneda"]).size().unstack(fill_value=0)
@@ -278,7 +287,7 @@ def plot_currency_percentage(frame: pd.DataFrame):
     plt.setp(ax.get_xticklabels(), rotation=0)
     ax.legend(title="Moneda", loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=5, frameon=False)
     fig.tight_layout()
-    fig.savefig(OUT / "04_moneda_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight")
+    fig.savefig(nueva_ruta_salida(OUT, "04_moneda_por_fuente.png", stamp), dpi=140, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -288,17 +297,29 @@ def main():
     frame = prepare(frame)
     sources = summary_table(frame)
     coverage = analysis_coverage_table(frame)
-    channels = channel_summary(frame)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sources.to_csv(OUT / f"cobertura_por_fuente_{stamp}.csv", index=False, encoding="utf-8-sig")
-    coverage.to_csv(OUT / f"cobertura_analisis_por_fuente_{stamp}.csv", index=False, encoding="utf-8-sig")
-    channels.to_csv(OUT / f"comparativo_canales_{stamp}.csv", index=False, encoding="utf-8-sig")
+    channels = channel_summary(frame)
+    sources.to_csv(
+        nueva_ruta_salida(OUT, "cobertura_por_fuente.csv", stamp),
+        index=False,
+        encoding="utf-8-sig",
+    )
+    coverage.to_csv(
+        nueva_ruta_salida(OUT, "cobertura_analisis_por_fuente.csv", stamp),
+        index=False,
+        encoding="utf-8-sig",
+    )
+    channels.to_csv(
+        nueva_ruta_salida(OUT, "comparativo_canales.csv", stamp),
+        index=False,
+        encoding="utf-8-sig",
+    )
 
-    plot_coverage(sources)
-    plot_analysis_coverage(coverage)
-    plot_channel_price(frame)
-    plot_channel_rooms(frame)
-    plot_currency_percentage(frame)
+    plot_coverage(sources, stamp)
+    plot_analysis_coverage(coverage, stamp)
+    plot_channel_price(frame, stamp)
+    plot_channel_rooms(frame, stamp)
+    plot_currency_percentage(frame, stamp)
 
     # print top-line answers
     print("COBERTURA DEL CAMPO PUBLICADO POR FUENTE")
@@ -310,7 +331,7 @@ def main():
     print("COMPARATIVO POR CANAL")
     print(channels.to_string(index=False))
 
-    md = OUT / f"comparativo_fuentes_{stamp}.md"
+    md = nueva_ruta_salida(OUT, "comparativo_fuentes.md", stamp)
     md.write_text(
         "## Cobertura del campo publicado por fuente\n\n"
         "Mide el campo tal como aparece en la fuente. No mide la cobertura del análisis: "
@@ -323,8 +344,10 @@ def main():
         "de esa columna y se conservan en `ubicacion_analisis_pct`.\n\n"
         + coverage.to_markdown(index=False)
         + "\n\n## Comparativo por canal\n\n"
-        "`con_fecha_publicada_pct` mide el campo publicado; `con_fecha_analisis_pct` suma la fecha "
-        "recuperada de la página de Revolico. Son coberturas distintas.\n\n"
+        "La tabla y el gráfico de precios excluyen monedas con n<5 y pares canal-moneda con n<10; "
+        "los pares omitidos se anotan en el gráfico. Los demás resúmenes miden cobertura, no comparan "
+        "importes. `con_fecha_publicada_pct` mide el campo publicado; `con_fecha_analisis_pct` suma "
+        "la fecha recuperada de la página de Revolico. Son coberturas distintas.\n\n"
         + channels.to_markdown(index=False)
         + "\n",
         encoding="utf-8",

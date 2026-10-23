@@ -4,32 +4,41 @@
 Comprueba cuatro cosas y falla con codigo de salida distinto de cero si detecta
 problemas:
 
-1. Todos los scripts del proyecto compilan.
+1. Todos los scripts del proyecto compilan en memoria, sin crear bytecode.
 2. La documentacion no arrastra artefactos de texto (marcas sin resolver,
    palabras en otro idioma, caracteres fuera de rango) ni tablas mal formadas.
-3. El estado de Git es visible antes de confirmar cambios.
-4. Los ficheros temporales de inspeccion visual no se versionan.
+3. El inventario de respaldos coincide con los archivos existentes.
+4. El estado de Git es visible antes de confirmar cambios.
 
 No modifica ningun archivo de datos.
 """
 from __future__ import annotations
 
-import py_compile
+import csv
+import hashlib
 import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+INVENTORY = ROOT / "data" / "raw" / "hash_inventario.csv"
+RAW_DIR = INVENTORY.parent
+FIXTURES_HISTORICOS_RETIRADOS = {"viviendas.csv", "viviendas_limpias.csv"}
 
 fallos = []
 
-print("== 1. Compilacion de scripts ==")
-for ruta in sorted(ROOT.glob("*.py")):
+print("== 1. Compilacion en memoria ==")
+scripts = sorted(
+    ruta
+    for ruta in ROOT.rglob("*.py")
+    if ".git" not in ruta.parts and "__pycache__" not in ruta.parts
+)
+for ruta in scripts:
     try:
-        py_compile.compile(str(ruta), doraise=True, cfile=str(ROOT / "__pycache__" / (ruta.stem + ".pyc")))
+        compile(ruta.read_bytes(), str(ruta), "exec")
     except Exception as exc:  # noqa: BLE001
         fallos.append(f"compila: {ruta.name}: {exc}")
-print(f"scripts revisados: {len(list(ROOT.glob('*.py')))}")
+print(f"scripts revisados: {len(scripts)}")
 
 print("\n== 2. Artefactos de texto en documentacion ==")
 patrones = {
@@ -63,7 +72,35 @@ for ruta in sorted(ROOT.glob("*.md")):
                 break
 print("tablas revisadas")
 
-print("\n== 4. Estado de Git ==")
+print("\n== 4. Inventario de respaldos ==")
+fixtures_ausentes = []
+try:
+    with INVENTORY.open("r", encoding="utf-8-sig", newline="") as archivo:
+        inventario = csv.DictReader(archivo)
+        for fila in inventario:
+            nombre = fila["archivo"]
+            ruta = RAW_DIR / nombre
+            if not ruta.is_file():
+                if nombre in FIXTURES_HISTORICOS_RETIRADOS:
+                    fixtures_ausentes.append(nombre)
+                else:
+                    fallos.append(f"hash: archivo ausente: {nombre}")
+                continue
+            sha256 = hashlib.sha256(ruta.read_bytes()).hexdigest()
+            if sha256.casefold() != fila["sha256"].strip().casefold():
+                fallos.append(f"hash: no coincide: {nombre}")
+            if ruta.stat().st_size != int(fila["bytes"]):
+                fallos.append(f"hash: tamaño no coincide: {nombre}")
+except (OSError, csv.Error, KeyError, ValueError) as exc:
+    fallos.append(f"hash: no se pudo validar {INVENTORY.name}: {exc}")
+print("hashes SHA-256 comparados sin distinguir mayusculas/minusculas")
+if fixtures_ausentes:
+    print(
+        "fixtures historicos retirados, documentados y no tratados como error:",
+        ", ".join(fixtures_ausentes),
+    )
+
+print("\n== 5. Estado de Git ==")
 estado = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, cwd=ROOT)
 print(estado.stdout or "(sin cambios)")
 rama = subprocess.run(["git", "status", "-sb"], capture_output=True, text=True, cwd=ROOT).stdout.splitlines()[0]

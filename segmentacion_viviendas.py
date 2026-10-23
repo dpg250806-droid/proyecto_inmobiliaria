@@ -14,6 +14,7 @@ from matplotlib.patches import Patch
 import seaborn as sns
 
 from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
+from salidas import nueva_ruta_salida
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -78,20 +79,40 @@ def build_segments(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def summary_table(frame: pd.DataFrame) -> pd.DataFrame:
+    currency_counts = frame.groupby("moneda_analisis").size()
+    eligible_currencies = currency_counts[currency_counts >= 5].index
+    frame = frame[frame["moneda_analisis"].isin(eligible_currencies)].copy()
+    pair_counts = frame.groupby(["moneda_analisis", "fuente"]).size()
+    eligible_pairs = pair_counts[pair_counts >= 10].index
+    frame = frame[
+        frame.set_index(["moneda_analisis", "fuente"]).index.isin(eligible_pairs)
+    ].copy()
     table = frame.groupby(["moneda_analisis", "grupo_precio", "perfil_habitaciones"]).agg(
         anuncios=("precio_analisis", "count"),
         precio_mediano=("precio_analisis", "median"),
         habitaciones_mediana=("habitaciones", "median"),
         banos_mediana=("banos", "median"),
     ).reset_index()
-    return table
+    return table[table["anuncios"] >= 5].copy()
 
 
-def plot_segment(frame: pd.DataFrame, out: Path):
+def plot_segment(frame: pd.DataFrame, out: Path, stamp: str | None = None):
     counts = frame.groupby("moneda_analisis").size()
     usables = counts[counts >= 5].index
     excluidas = counts[counts < 5]
     plot = frame[frame["moneda_analisis"].isin(usables)].copy()
+    source_currency_counts = plot.groupby(["moneda_analisis", "fuente"]).size()
+    excluded_pairs = source_currency_counts[source_currency_counts < 10]
+    valid_pairs = source_currency_counts[source_currency_counts >= 10].index
+    plot = plot[
+        plot.set_index(["moneda_analisis", "fuente"]).index.isin(valid_pairs)
+    ].copy()
+    price_group_counts = plot.groupby(["moneda_analisis", "grupo_precio"]).size()
+    excluded_price_groups = price_group_counts[price_group_counts < 5]
+    valid_price_groups = price_group_counts[price_group_counts >= 5].index
+    plot = plot[
+        plot.set_index(["moneda_analisis", "grupo_precio"]).index.isin(valid_price_groups)
+    ].copy()
     if plot.empty:
         return
     plot["grupo_etiqueta"] = plot["grupo_precio"].map(
@@ -122,21 +143,59 @@ def plot_segment(frame: pd.DataFrame, out: Path):
     nota = ""
     if not excluidas.empty:
         nota = " | sin gráfico por n<5: " + ", ".join(f"{m}: {n}" for m, n in excluidas.items())
+    if not excluded_pairs.empty:
+        nota += " | fuente-moneda n<10: " + ", ".join(
+            f"{m}/{f}: {n}" for (m, f), n in excluded_pairs.items()
+        )
+    if not excluded_price_groups.empty:
+        nota += " | grupo n<5: " + ", ".join(
+            f"{m}/{g}: {n}" for (m, g), n in excluded_price_groups.items()
+        )
     graph.fig.suptitle(
         f"Perfil por precio y habitaciones (precios separados por moneda; n: {detalle}){nota}",
         y=1.02,
     )
     graph.fig.savefig(
-        out / "segmentos_precio_habitaciones.png", dpi=140, facecolor="white", bbox_inches="tight"
+        nueva_ruta_salida(out, "segmentos_precio_habitaciones.png", stamp),
+        dpi=140,
+        facecolor="white",
+        bbox_inches="tight",
     )
     plt.close(graph.fig)
 
 
-def plot_source_segment(frame: pd.DataFrame, out: Path):
+def source_segment_eligibility(frame: pd.DataFrame, min_pair: int = 10, min_group: int = 5):
+    pair_counts = frame.groupby(["moneda_analisis", "fuente"]).size()
+    group_counts = frame.groupby(
+        ["moneda_analisis", "fuente", "grupo_precio"]
+    ).size()
+    small_group_pairs = {
+        (currency, source)
+        for (currency, source, _), count in group_counts.items()
+        if count < min_group
+    }
+    excluded_pairs = {
+        (currency, source): int(count)
+        for (currency, source), count in pair_counts.items()
+        if count < min_pair or (currency, source) in small_group_pairs
+    }
+    eligible = [
+        pair
+        for pair, count in pair_counts.items()
+        if count >= min_pair and pair not in small_group_pairs
+    ]
+    return eligible, excluded_pairs
+
+
+def plot_source_segment(frame: pd.DataFrame, out: Path, stamp: str | None = None):
     counts = frame.groupby("moneda_analisis").size()
     usables = counts[counts >= 5].index
     excluidas = counts[counts < 5]
     plot = frame[frame["moneda_analisis"].isin(usables)].copy()
+    eligible_pairs, excluded_pairs = source_segment_eligibility(plot)
+    plot = plot[
+        plot.set_index(["moneda_analisis", "fuente"]).index.isin(eligible_pairs)
+    ].copy()
     if plot.empty:
         return
     currencies = sorted(plot["moneda_analisis"].dropna().unique())
@@ -178,6 +237,11 @@ def plot_source_segment(frame: pd.DataFrame, out: Path):
     nota = ""
     if not excluidas.empty:
         nota = "Sin gráfico por n<5: " + ", ".join(f"{m}: {n}" for m, n in excluidas.items())
+    if excluded_pairs:
+        nota += " | fuente-moneda o grupo n insuficiente: " + ", ".join(
+            f"{currency}/{source} ({count})"
+            for (currency, source), count in excluded_pairs.items()
+        )
     fig.suptitle("Grupos de precio por fuente, separados por moneda", y=1.01)
     if leyenda is not None:
         fig.legend(
@@ -193,7 +257,10 @@ def plot_source_segment(frame: pd.DataFrame, out: Path):
         fig.text(0.5, -0.1, nota, ha="center", va="top", fontsize=8)
     fig.tight_layout()
     fig.savefig(
-        out / "segmentos_precio_por_fuente.png", dpi=140, facecolor="white", bbox_inches="tight"
+        nueva_ruta_salida(out, "segmentos_precio_por_fuente.png", stamp),
+        dpi=140,
+        facecolor="white",
+        bbox_inches="tight",
     )
     plt.close(fig)
 
@@ -207,15 +274,15 @@ def main():
         return
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = OUT / f"segmentacion_viviendas_{stamp}.csv"
+    path = nueva_ruta_salida(OUT, "segmentacion_viviendas.csv", stamp)
     seg.to_csv(path, index=False, encoding="utf-8-sig")
 
     table = summary_table(seg)
-    table_path = OUT / f"resumen_segmentacion_{stamp}.csv"
+    table_path = nueva_ruta_salida(OUT, "resumen_segmentacion.csv", stamp)
     table.to_csv(table_path, index=False, encoding="utf-8-sig")
 
-    plot_segment(seg, OUT)
-    plot_source_segment(seg, OUT)
+    plot_segment(seg, OUT, stamp)
+    plot_source_segment(seg, OUT, stamp)
 
     print(f"Segmentos guardados en {path}")
     print(f"Resumen: {table_path}")

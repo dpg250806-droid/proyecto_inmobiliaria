@@ -1,8 +1,10 @@
 # Diccionario de datos del proyecto inmobiliario (La Habana)
 
-**Alcance:** Revolico, Cubisima y HogarEnCuba. **Corte de datos:** 19/10/2026. **Actualizado:** 20/10/2026.
+**Alcance:** Revolico, Cubisima y HogarEnCuba. **Corte de datos:** 19/10/2026. **Auditoría técnica:** 21/10/2026.
 
 Los tipos indicados corresponden a la lectura por `pandas` de los CSV actuales. Las definiciones se basan en el código existente y en la auditoría verificada: **no se incorporan datos hipotéticos**. Ninguna fuente original se modifica en ningún paso del pipeline.
+
+> El maestro local vigente es `outputs/integracion/dataset_maestro_20261020_234716.csv`. Los informes, tablas y gráficos de `outputs/` pueden pertenecer a ejecuciones anteriores: comprueba su fecha y el campo `dataset_maestro_origen` antes de citarlos. Esta auditoría no sobrescribió ni regeneró esos archivos.
 
 ## 0. Convenciones generales
 
@@ -77,15 +79,15 @@ Los tipos indicados corresponden a la lectura por `pandas` de los CSV actuales. 
 
 ## 7. Cubisima (snapshot local)
 
-`viviendas_cubisima.csv` contiene 625 filas × 19 columnas (`fuente, titulo, tipo, zona, habitaciones, banos, precio, moneda, moneda_original, fecha, garaje, piscina, terraza, patio, balcon, jardin, url, pagina_origen, texto_tarjeta`). Es la entrada local de la fuente y no se versiona en Git.
+`viviendas_cubisima.csv` contiene 625 filas × 19 columnas (`fuente, titulo, tipo, zona, habitaciones, banos, precio, moneda, moneda_original, fecha, garaje, piscina, terraza, patio, balcon, jardin, url, pagina_origen, texto_tarjeta`). Es la entrada local de la fuente y no se versiona en Git. La fecha se interpreta como `dd/mm/yyyy` y su rango verificado es 29/09/2023–25/09/2026.
 
 | Campo | Estado observado en el CSV local |
 |---|---|
 | `precio` | 571 importes detectados en texto con símbolo `€`; 54 ausentes porque la tarjeta dice "Sin precio". |
 | `moneda` | Los 571 con precio se guardan como `EUR` (el símbolo del sitio); el slug permite reclasificarlos como CUC cuando el importe coincide con el mostrado. |
 | `url` | En los 571 con precio, el slug contiene `-<importe>-cuc-`. |
-| `fecha` | Formato `dd/mm/yyyy`; 1 ausencia. Rango 17/10/2023 a 12/10/2026, ninguna fecha posterior al corte. |
-| `zona` | Mezcla municipios y barrios (Siboney, Miramar, Vedado). Solo 100 de las 594 fichas del maestro coinciden con un municipio de La Habana. |
+| `fecha` | Formato `dd/mm/yyyy`; 1 ausencia. Rango 29/09/2023 a 25/09/2026, ninguna fecha posterior al corte. |
+| `zona` | Mezcla municipios y barrios (Siboney, Miramar, Vedado). Solo 98 de las 585 fichas del maestro coinciden con un municipio de La Habana. |
 | `garaje`, `piscina`, `terraza`, `patio`, `balcon`, `jardin` | Única fuente que publica características auxiliares de forma sistemática. La ausencia equivale a "no declarado", no a "no existe". |
 | `texto_tarjeta` | Evidencia original por fila: se trata como texto fuente, nunca como feature aislada. |
 
@@ -100,7 +102,7 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 
 ## 9. Maestro integrado
 
-**Archivo vigente:** `outputs/integracion/dataset_maestro_20261020_234716.csv` — 1.516 filas × 59 columnas (Revolico 748, Cubisima 585, HogarEnCuba 183), 0 `id_maestro` duplicados y 0 URLs repetidas. Copia depurada: `outputs/limpieza_integrada/dataset_maestro_depurado_*.csv`.
+**Archivo vigente:** `outputs/integracion/dataset_maestro_20261020_234716.csv` — 1.516 filas × 59 columnas (Revolico 748, Cubisima 585, HogarEnCuba 183), 0 `id_maestro` duplicados y 0 URLs repetidas. Estas cifras se verificaron el 21/10/2026. Copia depurada: `outputs/limpieza_integrada/dataset_maestro_depurado_*.csv`.
 
 ### 9.1 Identificación y procedencia
 
@@ -126,14 +128,14 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 | `fecha_publicacion` | fecha | Fecha publicada (Cubisima `dd/mm/yyyy` convertida; HogarEnCuba relativa convertida; Revolico sin campo). |
 | `fecha_descarga` | fecha | Fecha de la captura. |
 | `garaje`, `piscina`, `terraza`, `patio`, `balcon`, `jardin` | categórica | Características auxiliares declaradas (solo Cubisima). |
-| `precio_sospechoso` | booleano | Marca importes que no deben analizarse tal cual. **147 marcas** en el maestro vigente: 92 sin moneda publicada y 55 con un problema real de precio o moneda (16 CUC, 5 CUP, 34 USD). |
+| `precio_sospechoso` | booleano | Marca importes que no deben analizarse tal cual. **151 marcas** en el maestro vigente: 89 sin moneda publicada y 62 con un problema de precio o moneda. |
 
 ### 9.3 Revisión manual de precios
 
 | Columna | Tipo | Contenido y uso |
 |---|---|---|
-| `veredicto_revision` | categórica | Veredicto de la revisión de precios (`revision_manual/precios_pendientes_recuperados.csv`, `precios_bajos_1000.csv`, `precios_bajos.csv` y `precios_ausentes.csv`). Valores vigentes: `sin_precio_en_texto` (59), `no_verificable` (22), `solo_coincide_con_publicado` (11), `precio_recuperado` (15), `error` (13), `anuncio_no_disponible` (8), `despublicado` (8), `cup_requiere_validacion` (3), `valor_improbable` (1); vacío en los anuncios no revisados. |
-| `precio_reextraido`, `moneda_reextraida` | numérico / categórica | Importe y moneda verificados en la descripción o el título (41 anuncios: 13 de la revisión de precios bajos, 13 de la búsqueda de precios ausentes, 1 de la revisión de precios < 1.000 — cuyo precio real era "12,500" USD y no los 125 publicados — y 14 de la segunda pasada sobre los anuncios sin precio, con importes de 4.500 a 600.000 USD y un de 125.000 EUR). |
+| `veredicto_revision` | categórica | Veredicto de la revisión de precios. Conteos del maestro vigente: `sin_precio_en_texto` (59), `no_verificable` (22), `solo_coincide_con_publicado` (11), `precio_recuperado` (29), `error` (12), `anuncio_no_disponible` (8), `despublicado` (8), `cup_requiere_validacion` (3), `valor_improbable` (1); vacío en 1.363 anuncios no revisados. |
+| `precio_reextraido`, `moneda_reextraida` | numérico / categórica | Importe y moneda verificados en la descripción o el título (41 anuncios en el maestro; cada valor conserva su cita en `evidencia_precio`). |
 | `evidencia_precio` | texto | Cita literal de esa evidencia. |
 | `texto_evidencia`, `observacion` | texto | Contexto de la revisión manual. |
 | `precio_analisis` | numérico | Precio que usan conversión, comparativo, segmentación, clustering y preguntas. Reglas: reextracción verificada → campo publicado si no está sospechoso y tiene moneda → vacío. **No se imputa.** |
@@ -146,7 +148,7 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 |---|---|---|
 | `municipio_reextraido` | texto | Municipio leído de la página individual del anuncio de Revolico. |
 | `metodo_municipio` | categórica | `apollo` (campo estructurado `MunicipityType:<id>`) o `texto_titulo_o_descripcion` (coincidencia por palabra entera, solo si hay un único municipio). |
-| `ubicacion_analisis` | texto | Ubicación usada en medianas por zona: municipio verificado → `ubicacion_raw` → vacío. **940 filas con municipio homologado y 1.434 con ubicación de cualquier tipo.** |
+| `ubicacion_analisis` | texto | Ubicación usada en medianas por zona: municipio verificado → `ubicacion_raw` → vacío. **931 filas con municipio homologado y 1.418 con ubicación de cualquier tipo.** |
 | `origen_ubicacion` | categórica | `pagina_anuncio`, `campo_publicado` o `sin_dato`. |
 | `zona_normalizada` | texto | Zona o barrio declarado, sin forzar a municipio. |
 | `municipio_homologado` | texto | **Solo los 15 municipios de La Habana**, vía `ubicaciones.py` (`homologar_municipio()`). Las zonas o barrios de Cubisima no se imputan como municipio: quedan en `ubicacion_analisis`. |
@@ -161,12 +163,12 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 | `habitaciones_slug`, `banos_slug` | numérico | Cantidades escritas en el enlace, cuando no hay descripción. |
 | `evidencia_detalle` | texto | Fragmento literal que justifica el valor. |
 | `conflicto_detalle` | texto | Marcado cuando hay cantidades discrepantes (**72 anuncios**); no se resuelve. |
-| `habitaciones_analisis`, `banos_analisis` | numérico | Valores que usan segmentación, clustering, medianas y gráficos: descripción/título → campo publicado → slug → vacío. Cobertura de Revolico: 528 habitaciones (69,9 %) y 285 baños (37,7 %). |
+| `habitaciones_analisis`, `banos_analisis` | numérico | Valores que usan segmentación, clustering, medianas y gráficos: descripción/título → campo publicado → slug → vacío. Cobertura de Revolico: 526 habitaciones (70,3 %) y 284 baños (38,0 %). |
 | `origen_habitaciones`, `origen_banos` | categórica | `descripcion_o_titulo`, `campo_publicado`, `slug` o vacío. |
 | `fecha_ultima_disponibilidad` | fecha | Para anuncios no publicados: fecha del listado guardado donde aún aparecían. |
 | `ventana_despublicacion` | texto | Intervalo `AAAA-MM-DD a AAAA-MM-DD` de la desaparición (153 anuncios). Es un límite con evidencia, no una fecha exacta. |
 | `justificacion_disponibilidad` | texto | Explicación de por qué el anuncio sigue en el dataset pese a no ser accesible. |
-| `estado_anuncio` | categórica | `publicado` (602), `anuncio_inexistente_unpublished-ad` (80), `anuncio_inexistente_cant-see-deleted-ad` (73). |
+| `estado_anuncio` | categórica | `publicado` (595), `anuncio_inexistente_unpublished-ad` (80), `anuncio_inexistente_cant-see-deleted-ad` (73). |
 | `vendido` | booleano | `isSold` del anuncio. |
 | `fecha_reextraida` | fecha ISO | `updatedOnByUser`: **fecha de la última actualización**, no de creación ni de venta. No se mezcla con `fecha_publicacion` de otras fuentes. |
 | `evidencia_metadatos` | texto | Archivo de metadatos y URL de origen. |
@@ -186,7 +188,7 @@ El archivo original guardado sigue intacto; `reprocesar_cubisima.py` genera una 
 | `revision_manual/precios_pendientes_recuperados.csv` | Segunda pasada sobre los 134 anuncios sin precio: 15 `precio_recuperado` (cada uno con la cita literal del texto: "13000 USD", "lo vendo en 9000 usd", "El precio de $600000", "PRECIO 30MIL USD", "70 mil dollares", "Precio: 35 mil usd", "solo 125000 Euro"…) y 7 anuncios que no son oferta de venta de vivienda (`otro` o `producto`). |
 | `revision_manual/alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión de la investigadora (20/10/2026: todo lo que sea venta de inmueble es válido). Columnas: `fuente`, `id_local`, `url`, `motivo`, `evidencia`, `titulo`, `fecha_revision`, `estado` (`incluido_en_analisis`), `fecha_decision`, `decisor`, `nota`, `caveat_analisis` (advertencia de que el precio puede incluir tierra, licencia o equipamiento). |
 
-El maestro vigente incluye 1.532 fichas: 1.566 capturadas − 6 no residenciales − 28 fuera de alcance. Ninguna URL excluida aparece en el maestro (control automático).
+El maestro vigente incluye 1.516 fichas: 1.566 capturadas − 22 no residenciales/alquileres − 28 fuera de alcance. Ninguna URL de las 28 exclusiones de alcance aparece en el maestro (control automático). El maestro se verificó el 21/10/2026.
 
 ## 11. Entrevistas anónimas (`procesar_entrevistas.py`)
 

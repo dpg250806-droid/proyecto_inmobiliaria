@@ -7,6 +7,7 @@ alcance y pendientes de revision. No modifica ningun archivo.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,24 @@ MASTER_DIR = ROOT / "outputs" / "integracion"
 REVISION_DIR = ROOT / "revision_manual"
 
 
+def prepare_summary_groups(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Apply the documented minimum sample sizes to price summary tables."""
+    currency_counts = frame.groupby("moneda_analisis").size()
+    small_currencies = currency_counts[currency_counts < 5]
+    frame = frame[frame["moneda_analisis"].isin(currency_counts[currency_counts >= 5].index)]
+    pair_counts = frame.groupby(["fuente", "moneda_analisis"]).size()
+    small_pairs = pair_counts[pair_counts < 10]
+    eligible = pair_counts[pair_counts >= 10].index
+    frame = frame[
+        frame.set_index(["fuente", "moneda_analisis"]).index.isin(eligible)
+    ].copy()
+    excluded = {
+        "monedas_n_menor_5": int(small_currencies.sum()),
+        "pares_fuente_moneda_n_menor_10": int(small_pairs.sum()),
+    }
+    return frame, excluded
+
+
 def newest(directory: Path, pattern: str) -> Path:
     files = sorted(directory.glob(pattern))
     if not files:
@@ -26,6 +45,8 @@ def newest(directory: Path, pattern: str) -> Path:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     master_path = newest(MASTER_DIR, "dataset_maestro_*.csv")
     master = pd.read_csv(master_path, dtype=str).fillna("")
     print("MAESTRO:", master_path.name, "| filas:", len(master))
@@ -77,12 +98,15 @@ def main() -> None:
 
     print("\n== precios por fuente y moneda ==")
     usable = master[master["precio_analisis"].notna() & master["moneda_analisis"].ne("")]
+    summary_prices, excluded_prices = prepare_summary_groups(usable)
+    usable = summary_prices
     print(
-        usable.groupby(["fuente", "moneda_analisis"])["precio_analisis"]
+        summary_prices.groupby(["fuente", "moneda_analisis"])["precio_analisis"]
         .agg(["count", "median", "mean", "min", "max"])
         .round(1)
         .to_string()
     )
+    print("grupos omitidos por umbral:", excluded_prices)
 
     print("\n== asociacion de Spearman (habitaciones / banos vs precio) ==")
     filas = []
@@ -102,7 +126,12 @@ def main() -> None:
                     "rho": round(par["precio_analisis"].rank().corr(par[campo].rank()), 3),
                 }
             )
-    print(pd.DataFrame(filas).sort_values(["variable", "fuente"]).to_string(index=False))
+    asociaciones = pd.DataFrame(filas)
+    print(
+        asociaciones.sort_values(["variable", "fuente"]).to_string(index=False)
+        if not asociaciones.empty
+        else "Sin pares completos con tamaño suficiente."
+    )
 
     print("\n== medianas por habitaciones (Revolico USD y Cubisima CUC) ==")
     for fuente, moneda in [("Revolico", "USD"), ("Cubisima", "CUC"), ("HogarEnCuba", "USD")]:
@@ -119,16 +148,25 @@ def main() -> None:
             .agg(["count", "median"])
             .round(0)
         )
+        tabla = tabla[tabla["count"] >= 5]
         print(f"-- {fuente} {moneda}")
         print(tabla.to_string())
 
-    print("\n== municipio homologado, USD, n>=5 ==")
+    print("\n== municipio homologado, USD, n>=5 por fuente ==")
     muni = usable[usable["moneda_analisis"].eq("USD") & usable["municipio_homologado"].ne("")]
+    municipality_counts = muni.groupby(["municipio_homologado", "fuente"]).size()
+    eligible_municipalities = municipality_counts[municipality_counts >= 5].index
+    muni = muni[
+        muni.set_index(["municipio_homologado", "fuente"]).index.isin(
+            eligible_municipalities
+        )
+    ]
     tabla_muni = (
         muni.groupby(["municipio_homologado", "fuente"])["precio_analisis"]
         .agg(["count", "median"])
         .round(0)
     )
+    tabla_muni = tabla_muni[tabla_muni["count"] >= 5]
     print(tabla_muni.to_string())
 
     print("\n== EUR (politica de conservacion) ==")

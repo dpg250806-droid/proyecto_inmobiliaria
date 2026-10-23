@@ -4,6 +4,8 @@
 **Base integrada:** `outputs/integracion/dataset_maestro_20261020_234716.csv` — 1.516 anuncios (Revolico 748, Cubisima 585, HogarEnCuba 183), 0 identificadores duplicados y 0 URL repetidas.
 **Estado:** documento de resultados consolidado. No es todavía el informe final; el cierre académico (discusión, limitaciones y referencias) queda pendiente de autorización expresa.
 
+> **Advertencia técnica (21/10/2026):** este documento conserva tablas y cifras de una ejecución anterior. La auditoría verificó el maestro, pero no regeneró este reporte ni los outputs locales. Algunas tablas aún muestran monedas o grupos con muestras por debajo del umbral vigente y algunas cifras descriptivas quedaron desactualizadas. No citar estas tablas como resultados vigentes hasta regenerar y revisar las salidas; este archivo sigue siendo preliminar, no el informe final.
+
 ---
 
 ## 1. Alcance, trazabilidad y exclusiones

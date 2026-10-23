@@ -8,6 +8,7 @@ import pandas as pd
 
 from precio_moneda import detalle_analisis, precios_analisis
 from procesar_entrevistas import plain_text
+from salidas import nueva_ruta_salida
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -45,6 +46,8 @@ def rank_associations(frame: pd.DataFrame) -> pd.DataFrame:
     # 100% (Revolico y Cubisima 0%, HogarEnCuba ~5%), por lo que solo se reporta
     # su cobertura como hallazgo comparativo, nunca en estadisticas de precios.
     for (source, currency), group in frame.groupby(["fuente", "moneda_analisis"]):
+        if len(group) < 10:
+            continue
         for campo, etiqueta in (
             ("habitaciones_analisis", "habitaciones"),
             ("banos_analisis", "banos"),
@@ -171,6 +174,25 @@ def main():
         master["precio_analisis"].notna()
         & master["moneda_analisis"].ne("SIN_MONEDA")
     ].copy()
+    master_stamp = master_path.stem.removeprefix("dataset_maestro_")
+    integration_dir = ROOT / "outputs" / "integracion"
+    no_residenciales_path = integration_dir / f"anuncios_no_residenciales_{master_stamp}.csv"
+    fuera_alcance_path = integration_dir / f"anuncios_fuera_de_alcance_{master_stamp}.csv"
+    no_residenciales = (
+        len(pd.read_csv(no_residenciales_path, dtype=str))
+        if no_residenciales_path.exists()
+        else None
+    )
+    fuera_alcance = (
+        len(pd.read_csv(fuera_alcance_path, dtype=str))
+        if fuera_alcance_path.exists()
+        else None
+    )
+    total_capturado = (
+        len(master) + no_residenciales + fuera_alcance
+        if no_residenciales is not None and fuera_alcance is not None
+        else None
+    )
 
     lines = []
     lines.append("# Analisis exploratorio y linea narrativa (no es el informe final)")
@@ -223,20 +245,33 @@ def main():
             }
         )
     )
+    currency_counts = price_data.groupby("moneda_analisis").size()
+    currencies = currency_counts[currency_counts >= 5].index
+    pair_counts = price_data.groupby(["fuente", "moneda_analisis"]).size()
+    eligible_pairs = pair_counts[pair_counts >= 10].index
+    stats = stats[
+        stats["moneda_analisis"].isin(currencies)
+        & stats.set_index(["fuente", "moneda_analisis"]).index.isin(eligible_pairs)
+    ]
     for columna in ["mediana", "minimo", "maximo"]:
         stats[columna] = stats[columna].round(0).astype("Int64")
     stats["media"] = stats["media"].round(1)
     lines.append(stats.to_markdown(index=False))
     lines.append(
-        "\nLa mediana es el centro robusto de cada grupo; la media se desplaza por valores extremos "
+        "\nSe excluyen de esta tabla monedas con n<5 y pares fuente-moneda con n<10. "
+        "La mediana es el centro robusto de cada grupo; la media se desplaza por valores extremos "
         "(por ejemplo, HogarEnCuba USD). No se comparan importes entre monedas. Las filas con menos "
-        "de 30 observaciones (EUR: n=1 por fuente; Cubisima USD: n=14) se muestran para trazabilidad "
-        "y no se interpretan."
+        "de 30 observaciones (Cubisima USD: n=14) son exploratorias y no se interpretan. "
+        "Las monedas y pares omitidos siguen disponibles en el maestro para auditoría."
     )
     lines.append("")
 
     lines.append("## 2. Precio por municipio homologado y por zona")
-    municipios = price_data[price_data["municipio_homologado"].ne("")]
+    municipios = price_data[
+        price_data["municipio_homologado"].ne("")
+        & price_data["moneda_analisis"].isin(currencies)
+        & price_data.set_index(["fuente", "moneda_analisis"]).index.isin(eligible_pairs)
+    ]
     if not municipios.empty:
         muni = municipios.groupby(["fuente", "moneda_analisis", "municipio_homologado"]).agg(
             anuncios=("precio_analisis", "count"),
@@ -285,18 +320,20 @@ def main():
     zonas = price_data[
         price_data["fuente"].eq("Cubisima")
         & price_data["ubicacion_analisis"].fillna("").astype(str).str.strip().ne("")
+        & price_data["moneda_analisis"].isin(currencies)
+        & price_data.set_index(["fuente", "moneda_analisis"]).index.isin(eligible_pairs)
     ]
     if not zonas.empty:
         zona = zonas.groupby(["moneda_analisis", "ubicacion_analisis"]).agg(
             anuncios=("precio_analisis", "count"),
             mediana=("precio_analisis", "median"),
         ).reset_index()
-        zona = zona[zona["anuncios"] >= 10]
+        zona = zona[zona["anuncios"] >= 5]
         zona = zona.sort_values(["moneda_analisis", "mediana"], ascending=[True, False]).groupby(
             "moneda_analisis", group_keys=False
         ).head(10)
         lines.append(
-            "Zonas o barrios de Cubisima (n>=10; se muestran las 10 medianas más altas por moneda). "
+            "Zonas o barrios de Cubisima (n>=5; se muestran las 10 medianas más altas por moneda). "
             "No son municipios: se muestran aparte para no mezclar niveles geográficos. Algunos "
             "nombres coinciden con municipios (Playa, Habana Vieja, Centro Habana), pero se conserva "
             "la etiqueta declarada por Cubisima."
@@ -338,30 +375,43 @@ def main():
     lines.append("## 3. Asociacion entre precio y caracteristicas")
     associations = rank_associations(price_data)
     if not associations.empty:
-        lines.append("Correlacion de Spearman descriptiva, separada por fuente y moneda (n minimo 5):")
+        lines.append(
+            "Correlacion de Spearman descriptiva, separada por fuente y moneda; "
+            "cada par fuente-moneda debe tener n>=10 y al menos 5 filas completas."
+        )
         lines.append(associations.to_markdown(index=False))
         lines.append(
-            "\nLas filas con 5 <= n < 10 son exploratorias y no se usan como evidencia en el informe; "
-            "se conservan para trazabilidad. La correlacion no implica causalidad y puede estar "
+            "\nSe omiten los pares fuente-moneda con n<10 y las correlaciones con menos de "
+            "5 observaciones completas. "
+            "La correlacion no implica causalidad y puede estar "
             "afectada por la cobertura parcial de habitaciones y banos."
         )
     else:
         lines.append("No hay pares completos suficientes para estimar asociaciones.")
     lines.append("")
     hab = price_data[price_data["habitaciones_analisis"].notna()].groupby(["fuente", "moneda_analisis", "habitaciones_analisis"])["precio_analisis"].agg(["count", "median"]).reset_index()
+    hab = hab[
+        (hab["count"] >= 5)
+        & hab.set_index(["fuente", "moneda_analisis"]).index.isin(eligible_pairs)
+        & hab["moneda_analisis"].isin(currencies)
+    ]
     lines.append("Medianas observadas por cantidad de habitaciones (mejor dato disponible: texto del anuncio, campo publicado o enlace):")
     lines.append(hab.to_markdown(index=False) if not hab.empty else "Sin pares completos.")
     lines.append(
-        "\nLas celdas con n<5 se muestran para trazabilidad, pero no se interpretan: una mediana con "
-        "una o dos observaciones no es un patron."
+        "\nSe excluyen las celdas con n<5; las cantidades omitidas permanecen en los datos de origen."
     )
     lines.append("")
     baths = price_data[price_data["banos_analisis"].notna()].groupby(["fuente", "moneda_analisis", "banos_analisis"])["precio_analisis"].agg(["count", "median"]).reset_index()
+    baths = baths[
+        (baths["count"] >= 5)
+        & baths.set_index(["fuente", "moneda_analisis"]).index.isin(eligible_pairs)
+        & baths["moneda_analisis"].isin(currencies)
+    ]
     lines.append("Medianas observadas por cantidad de banos (mejor dato disponible: texto del anuncio, campo publicado o enlace):")
     lines.append(baths.to_markdown(index=False) if not baths.empty else "Sin pares completos.")
     lines.append(
-        "\nLas celdas con n<5 se muestran para trazabilidad, pero no se interpretan. Los banos tienen "
-        "menos cobertura que las habitaciones, sobre todo en Revolico."
+        "\nSe excluyen las celdas con n<5. Los banos tienen menos cobertura que las habitaciones, "
+        "sobre todo en Revolico."
     )
     lines.append("")
 
@@ -443,9 +493,25 @@ def main():
         fecha_publicada_pct=("fecha_publicacion", lambda s: round(100 * pd.notna(s).mean(), 1)),
         fecha_analisis_pct=("fecha_analisis", lambda s: round(100 * s.mean(), 1)),
     ).reset_index()
+    channel_source_names = {
+        "Revolico": "Informal - Revolico",
+        "Cubisima": "Estructurado - Cubisima",
+        "HogarEnCuba": "Estructurado - HogarEnCuba",
+    }
+    eligible_channel_pairs = [
+        (channel_source_names[source], currency)
+        for source, currency in eligible_pairs
+    ]
+    by_channel = by_channel[
+        by_channel["moneda_analisis"].isin(currencies)
+        & by_channel.set_index(["canal", "moneda_analisis"]).index.isin(
+            eligible_channel_pairs
+        )
+    ]
     lines.append(by_channel.to_markdown(index=False))
     lines.append(
-        "\n`fecha_publicada_pct` mide el campo publicado; `fecha_analisis_pct` suma la fecha de "
+        "\nLa tabla excluye monedas con n<5 y pares fuente-moneda con n<10. "
+        "`fecha_publicada_pct` mide el campo publicado; `fecha_analisis_pct` suma la fecha de "
         "actualización recuperada de la página individual en Revolico. No son equivalentes."
     )
     lines.append("")
@@ -460,10 +526,15 @@ def main():
     )
     eur = price_data[price_data["moneda_analisis"].eq("EUR")]
     if not eur.empty:
+        eur_sources = eur["fuente"].value_counts().to_dict()
+        eur_breakdown = "; ".join(
+            f"{source}: {count}" for source, count in eur_sources.items()
+        )
         lines.append(
-            f"Atención: EUR suma n={len(eur)} en toda la muestra (2 fichas de HogarEnCuba y 1 de "
-            "Cubisima). Se conserva por ser explícito en la descripción del vendedor, pero no se "
-            "interpreta ni se usa para comparar canales."
+            f"Atención: EUR suma n={len(eur)} en toda la muestra "
+            f"({eur_breakdown}). "
+            "Se conserva por ser explícito en la descripción del vendedor, pero no se interpreta "
+            "ni se usa para comparar canales cuando el tamaño queda bajo el umbral."
         )
     lines.append(
         "La diferencia de medianas entre canales no controla por composición, zona, tamaño ni "
@@ -494,6 +565,16 @@ def main():
             mediana_usd_formal=("precio_usd_formal", "median"),
             cuc_sin_tasa=("conversion_estado_informal", lambda s: int(s.eq("tasa_cuc_no_disponible").sum())),
         ).reset_index()
+        conv_counts = conversion.groupby("moneda_analisis").size()
+        conv_currencies = conv_counts[conv_counts >= 5].index
+        conv_pairs = conversion.groupby(["fuente", "moneda_analisis"]).size()
+        conv_eligible_pairs = conv_pairs[conv_pairs >= 10].index
+        conv_stats = conv_stats[
+            conv_stats["moneda_analisis"].isin(conv_currencies)
+            & conv_stats.set_index(["fuente", "moneda_analisis"]).index.isin(
+                conv_eligible_pairs
+            )
+        ]
         lines.append(conv_stats.to_markdown(index=False))
         lines.append(f"\nDataset maestro usado para conversion: `{master_path.name}`")
         lines.append(
@@ -664,13 +745,19 @@ def main():
                 "en el listado guardado del 2026-09-29, por lo que la desaparicion esta acotada a esa "
                 "ventana. No se descartan: quedan marcados con su ventana y su justificacion."
             )
-    lines.append(
-        "- Alcance: de las 1566 fichas iniciales se excluyeron 6 anuncios que no eran vivienda en "
-        "venta (productos, permuta o local) y 28 fuera de alcance (13 en otras provincias y 15 que no "
-        "son vivienda completa, incluidos cuartos sueltos). El maestro derivado queda en 1532. Las "
-        "listas auditables estan en `revision_manual/exclusiones_alcance.csv` y en los CSV fechados "
-        "`outputs/integracion/anuncios_no_residenciales_*.csv` y `anuncios_fuera_de_alcance_*.csv`."
-    )
+    if total_capturado is not None:
+        lines.append(
+            f"- Alcance: de {total_capturado} fichas capturadas, la integracion separo "
+            f"{no_residenciales} anuncios no residenciales/alquileres y {fuera_alcance} fuera de "
+            f"alcance; el maestro vigente queda en {len(master)}. Las listas auditables estan en "
+            "`revision_manual/exclusiones_alcance.csv` y en los CSV de integracion con la misma "
+            "marca de tiempo que el maestro."
+        )
+    else:
+        lines.append(
+            "- Alcance: los CSV de exclusiones con la misma marca de tiempo que el maestro no estan "
+            "disponibles; no se reconstruye el conteo inicial a partir de otro corte."
+        )
     lines.append(
         "- Alcance dudoso: 14 anuncios de uso mixto o dudoso (fincas, hostales, casas con restaurante "
         "o bar, almacenes y un local adaptado a vivienda) se conservan en el maestro por decision de la "
@@ -699,10 +786,10 @@ def main():
                             "n_con": len(con),
                             "mediana_con": round(con.median(), 0),
                             "n_sin": len(sin),
-                            "mediana_sin": round(sin.median(), 0) if len(sin) else None,
+                            "mediana_sin": round(sin.median(), 0) if len(sin) >= 5 else None,
                             "diferencia_pct": (
                                 round((con.median() / sin.median() - 1) * 100, 2)
-                                if len(sin) and sin.median()
+                                if len(sin) >= 5 and sin.median()
                                 else None
                             ),
                         }
@@ -749,8 +836,13 @@ def main():
     lines.append(
         f"La base integrada reune {len(master)} anuncios de tres canales: "
         + "; ".join(f"{source}: {count}" for source, count in source_counts.items())
-        + ", despues de excluir 6 fichas que no eran vivienda en venta y 28 fuera de alcance "
-        "(otras provincias o inmuebles no residenciales/cuartos). La cobertura y la moneda difieren "
+        + (
+            f", despues de separar {no_residenciales} no residenciales/alquileres y "
+            f"{fuera_alcance} fuera de alcance"
+            if total_capturado is not None
+            else ", con exclusiones cuyo conteo requiere los CSV de auditoria correspondientes"
+        )
+        + ". La cobertura y la moneda difieren "
         "entre canales, por lo que el primer resultado defendible es describir cada fuente por "
         "separado y comparar precios solo dentro de monedas compartidas."
     )
@@ -767,7 +859,7 @@ def main():
     lines.append("")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = OUT / f"preguntas_resueltas_{stamp}.md"
+    path = nueva_ruta_salida(OUT, "preguntas_resueltas.md", stamp)
     path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Respuestas guardadas en: {path}")
 

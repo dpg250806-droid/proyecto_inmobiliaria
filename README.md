@@ -3,11 +3,11 @@
 Proyecto académico que analiza el mercado inmobiliario de La Habana a partir de anuncios reales de tres fuentes cubanas (**Revolico**, **Cubisima** y **HogarEnCuba**), complementados con **10 entrevistas anónimas** y con un registro manual de **tasas de cambio**.
 
 - **Tema:** precio de la vivienda y sus determinantes observables (tamaño, zona, canal, moneda), en el contexto de la crisis económica, la desmonetización del CUC y la migración.
-- **Corte de datos:** 19/10/2026 · **Tasas de cambio:** 20/10/2026 · **Revisión del estado:** 20/10/2026
+- **Corte de datos:** 19/10/2026 · **Tasas de cambio:** 20/10/2026 · **Auditoría técnica:** 21/10/2026
 - **Base de análisis:** 1.516 anuncios (Revolico 748, Cubisima 585, HogarEnCuba 183) con 1.404 precios utilizables (92,6 %).
 - **Naturaleza:** asociación descriptiva y reproducible. No se afirma causalidad y no se imputan valores ausentes.
 
-> El documento de resultados vigente es [`informe_preliminar.md`](informe_preliminar.md). El informe final académico queda pendiente de autorización expresa.
+> [`informe_preliminar.md`](informe_preliminar.md) conserva resultados de una ejecución anterior y está marcado como pendiente de regeneración bajo los umbrales de publicación vigentes. No debe citarse como resultado actualizado. El informe final académico queda pendiente de autorización expresa.
 
 ---
 
@@ -39,13 +39,14 @@ El detalle de la formulación está en [`preguntas_investigacion.md`](preguntas_
 | Moneda de análisis | USD 885 · CUC 515 · EUR 4 · sin moneda 112 |
 | Municipios homologados | 931 (solo los 15 de La Habana) |
 | Anuncios de Revolico inaccesibles | 153 (80 despublicados, 73 eliminados) |
-| Fichas excluidas del alcance | 50 (15 no residenciales y 1 permuta de la pasada previa, 13 fuera de La Habana, 15 no vivienda, 9 alquileres, 7 de objeto o servicio no residencial) |
-| Fichas de alcance dudoso | 14, **incluidas** por decisión de la investigadora (venta de inmueble) y marcadas en `alcance_dudoso`; sensibilidad de las medianas: 0,00 % |
+| Fichas excluidas del alcance | 50: 22 no residenciales/alquileres y 28 fuera de alcance (13 fuera de La Habana y 15 no vivienda) |
+| Fichas de alcance dudoso | 14, **incluidas** por decisión de la investigadora (venta de inmueble) y marcadas en `alcance_dudoso`; la sensibilidad debe regenerarse junto con las salidas analíticas |
 | Revisión de precios < 1.000 | 23 anuncios revisados uno a uno: 9 alquileres retirados, 9 sin precio verificable, 4 despublicados, 1 reextraído (12.500 USD) |
 | Segunda pasada sobre los 134 sin precio | 15 precios recuperados del texto (12 USD, 4.500-600.000 USD, 125.000 EUR, 7.500 USD por convención de millares) y 7 anuncios retirados por no ser oferta de venta de vivienda |
 | Tasas registradas | 20/10/2026 (USD 815 informal / 710,50 formal; EUR 910 / 796,26) |
 | Entrevistas codificadas | 10 (E01–E10, 15–19/10/2026) |
-| Pruebas automáticas | 70 en verde (`python -m unittest discover -s tests -t .`) |
+| Pruebas automáticas | 74 en verde (`python -m unittest discover -s tests -t .`) |
+| Scrapers (prueba acotada) | Cubisima HTTP 200 (24 anuncios en 1 de 25 páginas); HogarEnCuba 13 fichas sin fallos (1 de 10 páginas); Revolico sigue HTTP 403 en línea y funciona en modo HTML local |
 
 Detalle por pregunta, tabla y gráfico: `outputs/preguntas/preguntas_resueltas_*.md`.
 
@@ -55,6 +56,7 @@ Detalle por pregunta, tabla y gráfico: `outputs/preguntas/preguntas_resueltas_*
 .
 ├── AGENTS.md                       reglas de trabajo del proyecto
 ├── README.md                       este documento
+├── requirements.txt                versiones de dependencias probadas en este entorno
 ├── informe_preliminar.md           informe de resultados consolidado (preliminar)
 ├── preguntas_investigacion.md      formulación de las preguntas
 ├── data_dictionary.md              columnas, formatos y políticas de cada campo
@@ -66,6 +68,7 @@ Detalle por pregunta, tabla y gráfico: `outputs/preguntas/preguntas_resueltas_*
 ├── ubicaciones.py                  homologación de los 15 municipios de La Habana
 ├── precio_moneda.py                librería de parseo conservador de importes y monedas
 ├── cifras_control.py               todas las cifras de control del maestro vigente
+├── salidas.py                      rutas fechadas para no reemplazar gráficos/reportes
 ├── auditoria_revolico.py           auditoría de consistencia de la extracción de Revolico
 ├── <scripts del pipeline>          ver catálogo en la sección 5
 ├── tests/                          pruebas de precio/moneda, alcance y ubicaciones
@@ -77,6 +80,11 @@ Detalle por pregunta, tabla y gráfico: `outputs/preguntas/preguntas_resueltas_*
 ## 4. Pipeline y orden de ejecución
 
 El pipeline es **no destructivo**: cada etapa escribe en `outputs/` con marca de tiempo y nunca sobrescribe un archivo original.
+Las dependencias de Python están fijadas en `requirements.txt` con las versiones disponibles y probadas en esta auditoría (Python 3.14). Para preparar un entorno:
+
+```powershell
+python -m pip install -r requirements.txt
+```
 
 ```powershell
 # 1. Extracción (solo si hay red y autorización; Revolico usa el HTML guardado)
@@ -161,7 +169,7 @@ python -m unittest discover -s tests -t .
 |---|---|
 | `cifras_control.py` | Cifras de control del maestro vigente (solo lectura) |
 | `auditoria_revolico.py` | Auditoría de consistencia de la extracción de Revolico (solo lectura) |
-| `control_calidad.py` | Control de calidad: compilación, artefactos de texto, tablas y estado de Git |
+| `control_calidad.py` | Control de calidad: compilación en memoria, documentación, hashes de datos y estado de Git |
 | `generar_alcance_dudoso.py` | Regenera `revision_manual/alcance_dudoso.csv` desde el maestro |
 | `generar_precios_pendientes.py` | Regenera la lista de precios pendientes con motivo y acción sugerida |
 | `generar_precios_bajos_1000.py` | Regenera `revision_manual/precios_bajos_1000.csv` (veredictos manuales de la revisión de precios < 1.000) |
@@ -195,7 +203,7 @@ python -m unittest discover -s tests -t .
 | `alcance_dudoso.csv` | 14 anuncios de uso mixto o dudoso **incluidos** en el análisis por decisión (20/10/2026), con motivo, evidencia, decisión y advertencia de interpretación |
 
 ### `outputs/` (resultados derivados, no versionados)
-`integracion/`, `limpieza_integrada/`, `conversiones/`, `comparativos/`, `segmentacion/`, `clustering/`, `visualizaciones/`, `entrevistas/`, `validacion/`, `preguntas/`, `historico/`. Todos los archivos llevan marca de tiempo (`*_AAAAMMDD_HHMMSS.*`); las dos últimas ejecuciones se conservan para comparación.
+`integracion/`, `limpieza_integrada/`, `conversiones/`, `comparativos/`, `segmentacion/`, `clustering/`, `visualizaciones/`, `entrevistas/`, `validacion/`, `preguntas/`, `historico/`. Las salidas nuevas llevan marca de tiempo y no reemplazan archivos existentes; las ejecuciones históricas se conservan.
 
 ### `data/` (respaldos locales, no versionados)
 `raw/` con los CSV originales y `hash_inventario.csv`; `tasas/` con el registro de tasas; `entrevistas/` con la exportación original de la encuesta (contiene datos personales identificables: **nunca se versiona ni se publica**).
@@ -207,7 +215,7 @@ python -m unittest discover -s tests -t .
 3. **Dos columnas, dos realidades.** `precio_original`/`moneda` conservan lo publicado; `precio_analisis`/`moneda_analisis` usan la reextracción manual verificada y excluyen lo sospechoso. El campo publicado nunca se corrige.
 4. **Moneda antes que comparación.** Solo se comparan importes dentro de la misma moneda; el CUC se convierte con paridad nominal declarada (no es tasa de mercado) y el EUR se conserva por literalidad de la descripción, aunque el JSON-LD de HogarEnCuba diga USD. Las tasas USD/EUR son las del 20/10/2026 (ElToque, leídas a mano porque el acceso automático está bloqueado) y toda cifra convertida cita esa fecha.
 5. **Municipios homólogos.** Solo los 15 municipios de La Habana; las zonas o barrios de Cubisima se analizan aparte y no se imputan como municipio.
-6. **Umbrales de publicación.** En gráficos se excluyen monedas con n<5, combinaciones fuente-moneda con n<10 y grupos con n<5, y esas exclusiones se anotan en la propia figura.
+6. **Umbrales de publicación.** En tablas y gráficos de precios se excluyen monedas con n<5, combinaciones fuente-moneda con n<10 y grupos con n<5; las exclusiones se anotan cuando la salida permite mostrarlas.
 7. **Sin causalidad.** Todo resultado se redacta como asociación descriptiva; la migración no se atribuye porcentualmente porque no hay serie temporal.
 8. **Superficie fuera del análisis.** Ninguna fuente la publica de forma sistemática (HogarEnCuba: 9/183).
 9. **Sin scraping de redes sociales.** Facebook y Telegram solo aportan evidencia manual y la encuesta anónima.
@@ -218,8 +226,8 @@ python -m unittest discover -s tests -t .
 ```powershell
 python cifras_control.py        # cifras de control contra el maestro vigente
 python auditoria_revolico.py    # consistencia de la extracción de Revolico
-python control_calidad.py       # compilación, artefactos de texto, tablas y estado de Git
-python -m unittest discover -s tests -t .   # 68 pruebas
+python control_calidad.py       # compilación en memoria, documentación, inventario y estado de Git
+python -m unittest discover -s tests -t .   # 74 pruebas
 ```
 
 - Cada anuncio tiene `id_maestro` único y conserva `id_local`, `url`, `snapshot_origen`, `origen_precio`, `origen_ubicacion`, `origen_habitaciones`, `origen_banos` y `evidencia_*` para reconstruir de dónde salió cada valor.
@@ -234,12 +242,12 @@ Se versionan código, documentación, pruebas y las decisiones manuales auditada
 
 ## 10. Limitaciones conocidas
 
-1. Sin serie temporal de precios: 601 de 602 fechas útiles de Revolico son de agosto a octubre de 2026. No hay panel 2020-2026.
-2. Sesgo de disponibilidad: 153 de 755 anuncios de Revolico ya no son accesibles; se marcan con su ventana de despublicación.
-3. Cobertura parcial de habitaciones (69,9 %) y banos (37,7 %) en Revolico; 72 anuncios con cantidades discrepantes quedan sin resolver.
+1. Sin serie temporal de precios: las 595 fechas de actualización disponibles en Revolico van de mayo de 2025 a octubre de 2026; no hay panel 2020-2026.
+2. Sesgo de disponibilidad: 153 de 748 anuncios de Revolico ya no son accesibles; se marcan con su ventana de despublicación.
+3. Cobertura parcial de habitaciones (70,3 %) y baños (38,0 %) en el dato de análisis de Revolico; 72 anuncios con cantidades discrepantes quedan sin resolver.
 4. 112 anuncios sin precio verificable: es el faltante principal y no se resuelve por imputación (quedan listados con motivo y acción sugerida en `outputs/validacion/`).
 5. Tasas de referencia, no operadas: el registro es del 20/10/2026 y se leyó de ElToque por transcripción manual (el acceso automático devuelve HTTP 403); el euro varió durante el día y se toma la cifra de las 17:00.
-6. Precios en CUP (5) y EUR (3) no interpretables por volumen o por conflicto de fuente.
+6. Precios en CUP (3) sospechosos y EUR (4) conservados por literalidad; EUR queda por debajo del umbral de publicación.
 7. Muestra de entrevistas pequeña, no probabilística y autoseleccionada: describe mecanismos, no prevalencias.
 8. Las 14 fichas de alcance dudoso pueden tener un precio que incluye tierra, licencia o equipamiento de negocio: se mantienen, se marcan y se prueban.
 9. El catálogo de venta está contaminado: nueve anuncios eran alquileres (con el precio de la renta mensual), siete no eran oferta de venta de vivienda (productos, anuncios de agencia, una demanda de compra, un restaurante) y se retiraron; no se puede descartar que queden casos similares por encima de 1.000.

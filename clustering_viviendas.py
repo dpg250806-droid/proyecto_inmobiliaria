@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from precio_moneda import detalle_analisis, normalizar_moneda, precios_analisis
+from salidas import nueva_ruta_salida
 
 ROOT = Path(__file__).resolve().parent
 MASTER_DIR = ROOT / "outputs" / "integracion"
@@ -159,10 +160,22 @@ def main():
     data["cluster_etiqueta"] = data["cluster"].map({0: "económico", 1: "medio", 2: "alto"})
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data.to_csv(OUT / f"clusters_viviendas_{stamp}.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame(center_rows).to_csv(OUT / f"centroides_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
+    data.to_csv(
+        nueva_ruta_salida(OUT, "clusters_viviendas.csv", stamp),
+        index=False,
+        encoding="utf-8-sig",
+    )
+    pd.DataFrame(center_rows).to_csv(
+        nueva_ruta_salida(OUT, "centroides_clusters.csv", stamp),
+        index=False,
+        encoding="utf-8-sig",
+    )
     estabilidad = pd.DataFrame(stability_rows)
-    estabilidad.to_csv(OUT / f"estabilidad_clusters_{stamp}.csv", index=False, encoding="utf-8-sig")
+    estabilidad.to_csv(
+        nueva_ruta_salida(OUT, "estabilidad_clusters.csv", stamp),
+        index=False,
+        encoding="utf-8-sig",
+    )
     print("Estabilidad (tamaño y mediana de cada grupo en 5 semillas):")
     print(
         estabilidad.groupby(["moneda", "etiqueta"])
@@ -205,7 +218,10 @@ def main():
         y=1.02,
     )
     graph.fig.savefig(
-        OUT / "clusters_viviendas.png", dpi=140, facecolor="white", bbox_inches="tight"
+        nueva_ruta_salida(OUT, "clusters_viviendas.png", stamp),
+        dpi=140,
+        facecolor="white",
+        bbox_inches="tight",
     )
     plt.close(graph.fig)
     print(f"Clusters guardados en {OUT}")

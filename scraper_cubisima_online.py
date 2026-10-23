@@ -168,7 +168,10 @@ def main(argv: list[str] | None = None) -> None:
     total_paginas = min(total_detectado, args.max_pages) if args.max_pages else total_detectado
     if total_detectado == 1:
         print("Aviso: no se detecto el total de paginas; se procesara solo la primera.")
-    print("Total de paginas Cubisima detectadas:", total_paginas)
+    print(
+        f"Total de paginas detectadas: {total_detectado}; "
+        f"se procesaran: {total_paginas}"
+    )
 
     todos = []
     for numero in range(1, total_paginas + 1):

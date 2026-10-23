@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from clustering_viviendas import kmeans
+from cifras_control import prepare_summary_groups
 from comparativo_fuentes import channel_summary, prepare, summary_table
 from extraer_detalle_anuncios_revolico import (
     PATRONES_BANO,
@@ -39,6 +40,7 @@ from analisis_preguntas import rank_associations
 from precio_moneda import detalle_analisis, extraer_precio_moneda, normalizar_moneda, parsear_importe, precios_analisis
 from reprocesar_cubisima import reprocesar
 from reprocesar_hogarencuba import latest_source, revalidar
+from salidas import nueva_ruta_salida
 from scraper_cubisima_online import (
     detectar_paginas,
     extraer_anuncios_pagina,
@@ -46,8 +48,8 @@ from scraper_cubisima_online import (
     validar_respuesta,
 )
 from scraper_hogarencuba import detect_pages, list_links, parse_detail, run
-from segmentacion_viviendas import build_segments
-from visualizaciones_fuentes import money_labels
+from segmentacion_viviendas import build_segments, summary_table as segment_summary_table
+from visualizaciones_fuentes import filtrar_municipios_por_fuente, money_labels
 
 
 class PriceCurrencyParsingTests(unittest.TestCase):
@@ -616,17 +618,116 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
             "USD": 3,
         })
 
-    def test_channel_price_summary_keeps_currency_separate(self):
-        frame = pd.DataFrame([
-            {"fuente": "Cubisima", "canal": "plataforma", "precio_original": 100, "moneda": "USD", "habitaciones": 2, "banos": 1, "fecha_publicacion": None, "ubicacion_raw": None, "superficie_m2": None},
-            {"fuente": "Cubisima", "canal": "plataforma", "precio_original": 1000, "moneda": "EUR", "habitaciones": 2, "banos": 1, "fecha_publicacion": None, "ubicacion_raw": None, "superficie_m2": None},
-            {"fuente": "Cubisima", "canal": "plataforma", "precio_original": 10, "moneda": "SIN_MONEDA", "habitaciones": 2, "banos": 1, "fecha_publicacion": None, "ubicacion_raw": None, "superficie_m2": None},
-        ])
+    def test_channel_price_summary_keeps_currency_separate_and_excludes_small_groups(self):
+        frame = pd.DataFrame(
+            [
+                {"fuente": "Cubisima", "canal": "plataforma", "precio_original": 100 + index, "moneda": "USD", "habitaciones": 2, "banos": 1, "fecha_publicacion": None, "ubicacion_raw": None, "superficie_m2": None}
+                for index in range(10)
+            ]
+            + [
+                {"fuente": "Cubisima", "canal": "plataforma", "precio_original": 1000, "moneda": "EUR", "habitaciones": 2, "banos": 1, "fecha_publicacion": None, "ubicacion_raw": None, "superficie_m2": None},
+                {"fuente": "Cubisima", "canal": "plataforma", "precio_original": 10, "moneda": "SIN_MONEDA", "habitaciones": 2, "banos": 1, "fecha_publicacion": None, "ubicacion_raw": None, "superficie_m2": None},
+            ]
+        )
         prepared = prepare(frame)
         summary = channel_summary(prepared)
-        self.assertEqual(set(summary["moneda"]), {"USD", "EUR"})
-        self.assertEqual(dict(zip(summary["moneda"], summary["mediana_precio"])), {"EUR": 1000, "USD": 100})
-        self.assertEqual(summary_table(prepared).loc[0, "moneda_pct"], 66.7)
+        self.assertEqual(set(summary["moneda"]), {"USD"})
+        self.assertEqual(dict(zip(summary["moneda"], summary["mediana_precio"])), {"USD": 104.5})
+        self.assertEqual(summary_table(prepared).loc[0, "moneda_pct"], 91.7)
+
+    def test_control_summary_excludes_currencies_and_source_pairs_below_threshold(self):
+        frame = pd.DataFrame(
+            [
+                {"fuente": "A", "moneda_analisis": "USD", "precio_analisis": value}
+                for value in range(10)
+            ]
+            + [
+                {"fuente": "B", "moneda_analisis": "USD", "precio_analisis": value}
+                for value in range(2)
+            ]
+            + [
+                {"fuente": "A", "moneda_analisis": "CUC", "precio_analisis": value}
+                for value in range(9)
+            ]
+            + [
+                {"fuente": "A", "moneda_analisis": "EUR", "precio_analisis": value}
+                for value in range(4)
+            ]
+        )
+        filtered, excluded = prepare_summary_groups(frame)
+        self.assertEqual(set(zip(filtered["fuente"], filtered["moneda_analisis"])), {("A", "USD")})
+        self.assertEqual(len(filtered), 10)
+        self.assertEqual(excluded, {
+            "monedas_n_menor_5": 4,
+            "pares_fuente_moneda_n_menor_10": 11,
+        })
+
+    def test_dated_output_helper_does_not_reuse_existing_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            first = nueva_ruta_salida(output_dir, "plot.png", "20261021_120000")
+            self.assertEqual(first.name, "plot_20261021_120000.png")
+            first.touch()
+            second = nueva_ruta_salida(output_dir, "plot.png", "20261021_120000")
+            self.assertEqual(second.name, "plot_20261021_120000_02.png")
+
+    def test_municipality_filter_keeps_groups_with_five_or_more(self):
+        frame = pd.DataFrame(
+            [
+                {"municipio_homologado": "Playa", "fuente": "Revolico"}
+                for _ in range(5)
+            ]
+            + [
+                {"municipio_homologado": "Cerro", "fuente": "Revolico"}
+                for _ in range(4)
+            ]
+        )
+        filtered, excluded = filtrar_municipios_por_fuente(frame)
+        self.assertEqual(filtered["municipio_homologado"].unique().tolist(), ["Playa"])
+        self.assertEqual(excluded.to_dict(), {("Cerro", "Revolico"): 4})
+
+    def test_segment_summary_excludes_small_source_currency_and_profile_groups(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "fuente": "A",
+                    "moneda_analisis": "USD",
+                    "grupo_precio": "economica",
+                    "perfil_habitaciones": "pequena",
+                    "precio_analisis": 100,
+                    "habitaciones": 1,
+                    "banos": 1,
+                }
+                for _ in range(4)
+            ]
+            + [
+                {
+                    "fuente": "A",
+                    "moneda_analisis": "USD",
+                    "grupo_precio": "alta",
+                    "perfil_habitaciones": "amplia",
+                    "precio_analisis": 1000,
+                    "habitaciones": 5,
+                    "banos": 2,
+                }
+                for _ in range(6)
+            ]
+            + [
+                {
+                    "fuente": "B",
+                    "moneda_analisis": "USD",
+                    "grupo_precio": "alta",
+                    "perfil_habitaciones": "amplia",
+                    "precio_analisis": 1000,
+                    "habitaciones": 5,
+                    "banos": 2,
+                }
+                for _ in range(4)
+            ]
+        )
+        summary = segment_summary_table(frame)
+        self.assertEqual(summary["grupo_precio"].tolist(), ["alta"])
+        self.assertEqual(summary["anuncios"].tolist(), [6])
 
     def test_visualization_normalizes_unknown_currency(self):
         frame = pd.DataFrame({
@@ -636,7 +737,7 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
         result = money_labels(frame)
         self.assertEqual(result["moneda"].tolist(), ["", "USD"])
 
-    def test_rank_associations_are_separated_by_currency_and_require_five_rows(self):
+    def test_rank_associations_are_separated_by_currency_and_require_ten_rows(self):
         frame = pd.DataFrame([
             {"fuente": source, "moneda": currency, "precio_original": price, "habitaciones": rooms,
              "banos": None, "superficie_m2": None}
@@ -644,7 +745,8 @@ class CurrencyConversionAndAnalysisTests(unittest.TestCase):
                 ("Cubisima", "CUC", 1),
                 ("Revolico", "USD", 100),
             ]
-            for price, rooms in [(100, 1), (200, 2), (300, 3), (400, 4), (500, 5)]
+            for price, rooms in [(100, 1), (200, 2), (300, 3), (400, 4), (500, 5),
+                                 (600, 6), (700, 7), (800, 8), (900, 9), (1000, 10)]
             for price in [price * scale]
         ])
         result = rank_associations(frame)
